@@ -20,6 +20,45 @@ ES modules don't load from `file://`, so open the pages through a local server.
 
 ---
 
+## What's new in V5
+
+- **WebGPU renderer** (`src/engine/webgpu.js`, shaders in `wgsl.js`):
+  - `await createRenderer(canvas)` picks WebGPU when the browser has it and falls back to WebGL2. `?backend=webgl2` or `?backend=webgpu` in the URL overrides the choice.
+  - It draws the same materials as WebGL2: all 20 procedural patterns, skin SSS, light profiles, cascaded PCSS shadows, sky, particles, SSAO, volumetric light, bloom and grading.
+  - Screen-space reflections, contact shadows, depth of field, the editor overlays and picking stay WebGL2-only for now, so the Studio, Viewer and path tracer keep using WebGL2.
+  - Per-draw data goes into one uniform buffer per frame (dynamic offsets). Skinning reads storage buffers, and textures are mipmapped sRGB.
+  - It limits itself to two frames in flight, and `snapshot()` reads a frame back.
+- **GPU culling**: instanced meshes are frustum-culled by a compute pass that compacts the survivors and writes the indirect draw arguments. In the Stress Test, 40,000 rocks and cacti take one dispatch and a few draws.
+- **Automatic instancing** on both backends: static meshes that share geometry and material become one instanced draw. The Physics Playground went from 34 draws to 4.
+- **Mechanisms** (`mechanisms.js`):
+  - Parts: hinges, slides and spins, each with a spring (`Part`, `Rig`).
+  - `MechClip` timelines with events, and `MechClip.sequence()` for long clips.
+  - `Prop` is a node that owns a rig, clips, sockets and grip information.
+- **Generated guns** (`src/content/armory.js`, `makeGun(kind, params)`):
+  - A single-action revolver, a lever-action carbine, a bolt-action rifle and a double-barrel shotgun.
+  - Working parts: hammers, a turning cylinder, a loading gate and ejector rod, a lever and bolt, a lifting bolt, a break action with extractor.
+  - They track their ammunition, and `fire()`, `cock()` and `reload()` build their clips from the gun's state.
+- **Generated tools** (`src/content/tools.js`, `makeTool(kind, params)`): 13 kinds.
+  - Axe, hatchet, pickaxe, shovel, hammer, sledgehammer, pitchfork, saw and torch.
+  - With moving parts: a folding knife that opens, an adjustable wrench, a swinging lantern with a light and a wick, and a bucket.
+- **Buildings**:
+  - `building(new Kit(palette, { openable: true }), ...)` hangs doors, saloon batwings, shutters and cell doors on hinges. Batwings swing both ways and spring back.
+  - `interior: true, use: 'saloon' | 'store' | 'sheriff' | 'house' | 'hotel'` adds furnished rooms and stairs.
+- **Holding things** (`character.equip(prop, { hold })`, `handling.js`):
+  - The prop's pose drives the body: two-bone IK takes the main hand to the grip and the other hand to the support grip. On a handle, the support grip slides when a swing takes it out of reach.
+  - Holds: aim, ready, carry.
+  - Actions: chop, dig, hammer, saw, stab, raise, recoil and reload. Each fires events with the world position of the business end.
+- **Asset Workshop** (`examples/workshop.html`):
+  - Design any of the above on sliders, work its actions and open its doors, and see it in the Sheriff's hands.
+  - Export it with recorded animations: `recordAnimation()` and `exportSceneGLB()` in `io.js`.
+  - The design lives in the URL.
+- **ECS and gameplay** (`ecs.js`, `gameplay.js`):
+  - A small entity-component `World` with systems and events.
+  - Pickups, an inventory with slots, and interaction prompts for whatever the player faces.
+  - Doors become interactables.
+- **Frontier Town** now has items to find (axe, Winchester, shotgun, lantern, shovel, torch, pickaxe, hammer), an inventory bar, and doors that open.
+  - Keys: E picks up or opens, 1–6 or Q switches items, F or a click uses the item, R reloads, G drops.
+
 ## What's new in V4
 
 The engine stays in plain JavaScript (no build step), with WebGPU planned as the main backend. This release is focused:

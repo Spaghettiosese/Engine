@@ -76,14 +76,15 @@
 <body>
 <section class="hero">
   <canvas id="stage" aria-label="Live render: the Cowboy moving through Idle, Walk, Run and Crawl"></canvas>
-  <div class="fallback" id="fallback" hidden>Live preview needs WebGL2.</div>
+  <div class="fallback" id="fallback" hidden>Live preview needs WebGPU or WebGL2.</div>
   <div class="hero-copy">
     <h1 class="wordmark">Shape<span>Forge</span></h1>
-    <div><span class="v2">V4</span> <span style="color:var(--sand-2)">fire and smoke, physical lights and flashlights, glTF import, more realistic characters</span></div>
+    <div><span class="v2">V5</span> <span style="color:var(--sand-2)">WebGPU renderer with GPU culling, generated guns, tools and buildings with moving parts, an Asset Workshop, items and inventory</span></div>
     <p class="lede">A 3D model and animation engine where every character is built from shapes, rigged to bones and set in motion.</p>
     <div class="ctas">
       <a class="cta primary" href="editor.html">Open the Studio</a>
       <a class="cta" href="viewer.html">Animation Viewer</a>
+      <a class="cta" href="examples/workshop.html">Asset Workshop</a>
       <a class="cta" href="examples/shootout.html">Play Showdown</a>
       <a class="cta" href="examples/raytracing.html">See it path traced</a>
       <a class="cta" href="examples/physics.html">Physics Playground</a>
@@ -182,6 +183,8 @@
     <li><b>Procedural motion</b>Foot IK on stairs, look-at, leaning into turns, spring hit reactions and tweens</li>
   </ul>
   <div class="gallery">
+    <a class="ex" href="examples/workshop.html"><img src="examples/thumbs/workshop.jpg" alt="The Sheriff shouldering a generated lever-action carbine" loading="lazy"><div><h3>Asset Workshop (V5) <span>Open ↗</span></h3><p>Design revolvers, rifles, shotguns, tools and buildings on sliders. Work their actions, open the doors, hand them to the Sheriff and export them with their animations as GLB.</p></div></a>
+    <a class="ex" href="examples/stress.html"><img src="examples/thumbs/stress.jpg" alt="A desert of cacti and rocks drawn with GPU culling" loading="lazy"><div><h3>Stress Test (V5) <span>Open ↗</span></h3><p>Tens of thousands of instances culled on the GPU by a WebGPU compute pass, and thousands of props merged into a handful of draws.</p></div></a>
     <a class="ex" href="examples/import.html"><div><h3>Model Import (V4) <span>Open ↗</span></h3><p>Drop in any glTF or GLB model, such as a scanned or sculpted character, and see it with textures, skin and animations under V4 lighting: physical lights, a flashlight and a campfire with smoke.</p></div></a>
     <a class="ex" href="examples/shootout.html"><img src="examples/thumbs/shootout.jpg" alt="Over the Sheriff's shoulder: an outlaw in the street at sunset, a tracer from his revolver" loading="lazy"><div><h3>Showdown <span>Play ↗</span></h3><p>The Sheriff's Colt: draw, aim, fan six shots and reload. Shatter bottles at the range or hold the street against three waves of outlaws.</p></div></a>
     <a class="ex" href="examples/raytracing.html"><img src="examples/thumbs/raytracing.jpg" alt="A path-traced gallery with chrome spheres and a neon sign reflected in a polished floor" loading="lazy"><div><h3>Ray Tracing <span>Open ↗</span></h3><p>A golden-hour gallery, path traced on your GPU. Compare it side by side with the real-time renderer, add depth of field, and pose the Cowboy.</p></div></a>
@@ -239,8 +242,17 @@ runLoop((dt) =&gt; {
   lamp.intensity = <span class="s">10</span> * scene.environment.night;
   renderer.render(scene, camera, { background: <span class="s">'sky'</span> });
 });</pre>
+  <p class="sub" style="margin-top:22px">V5: pick a backend automatically, generate a gun and put it in the Sheriff's hands.</p>
+<pre><span class="k">import</span> * <span class="k">as</span> E <span class="k">from</span> <span class="s">'./src/engine/index.js'</span>;
+<span class="k">import</span> { makeGun } <span class="k">from</span> <span class="s">'./src/content/armory.js'</span>;
+
+<span class="k">const</span> renderer = <span class="k">await</span> E.createRenderer(canvas);          <span class="c">// WebGPU when the browser has it, else WebGL2</span>
+<span class="k">const</span> rifle = makeGun(<span class="s">'lever'</span>, { barrel: <span class="s">0.6</span>, finish: <span class="s">'nickel'</span> });
+<span class="k">const</span> hands = cowboy.equip(rifle, { hold: <span class="s">'rifleAim'</span> });  <span class="c">// IK grips for both hands</span>
+<span class="k">if</span> (<span class="k">await</span> rifle.fire()) hands.play(<span class="s">'recoilRifle'</span>);
+<span class="k">await</span> hands.during(<span class="s">'reloadRifle'</span>, rifle.reload());       <span class="c">// the gate takes each round in turn</span></pre>
 </main>
-<footer>ShapeForge Engine · zero dependencies · WebGL2 · source in <code>src/engine</code>, Studio in <code>src/editor</code>, Viewer in <code>src/viewer</code>, V2 examples in <code>examples</code>.</footer>
+<footer>ShapeForge Engine · zero dependencies · WebGPU with WebGL2 fallback · source in <code>src/engine</code>, Studio in <code>src/editor</code>, Viewer in <code>src/viewer</code>, V2 examples in <code>examples</code>.</footer>
 <script type="module">
   import * as E from './src/engine/index.js';
   import { createCowboy } from './src/content/cowboy.js';

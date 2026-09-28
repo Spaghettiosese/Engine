@@ -260,7 +260,7 @@ function buildBolt(p, M, gun) {
   const st = gun.state = { capacity: 6, magazine: 5, chambered: true, cocked: true };
   const showMag = () => mag.forEach((r, i) => (r.visible = i < st.magazine));
   gun.sockets.muzzle = [0, boreY, rz1 + L + 0.005]; gun.sockets.ejection = [-0.02, boreY + 0.01, rz0 + 0.05];
-  gun.support = { position: [0, 0.0, rz1 + 0.16], pose: SUPPORT_POSE };
+  gun.support = { position: [0, 0.0, rz1 + 0.08], pose: SUPPORT_POSE };
   gun.handlers.eject = () => {};
   gun.handlers.chamber = () => { if (st.magazine > 0) { st.magazine--; st.chambered = true; showMag(); } };
   gun.handlers.loadMag = () => { st.magazine = Math.min(5, st.magazine + 1); showMag(); };

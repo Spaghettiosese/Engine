@@ -18,11 +18,11 @@ export const HOLDS = {
   carry: null, // hand animation drives it; the prop just sits in the hand socket
   pistolReady: { pos: [0.02, -0.42, 0.3], rot: [38, 0, 0] },
   pistolAim: { pos: [0.04, -0.03, 0.56], rot: [0, 4, 0] },
-  rifleReady: { pos: [0.16, -0.4, 0.26], rot: [28, 28, 0] },
+  rifleReady: { pos: [0.05, -0.2, 0.15], rot: [35, 60, 0] },
   rifleAim: { pos: [0.075, -0.075, 0.22], rot: [0, 2, 0] },
   toolReady: { pos: [0.16, -0.62, 0.28], rot: [48, 0, 0] },
   toolRest: { pos: [0.02, -0.55, 0.12], rot: [12, 0, 8] },
-  shovelReady: { pos: [0.18, -0.2, 0.18], rot: [150, 0, 0] },
+  shovelReady: { pos: [0.1, -0.15, 0.2], rot: [175, 0, 60] },
   knifeReady: { pos: [0.02, -0.5, 0.36], rot: [70, 0, 0] },
   lanternRaise: { pos: [0.02, 0.02, 0.5], rot: [0, 0, 0] },
 };
@@ -33,18 +33,18 @@ export const ACTIONS = {
   chop: { duration: 1.05, keys: [
     k(0, HOLDS.toolReady.pos, HOLDS.toolReady.rot),
     k(0.42, [0.14, 0.12, 0.02], [-118, 0, 0], { chest: [-8, 10, 0] }),
-    k(0.62, [0.16, -0.72, 0.5], [100, 0, 0], { chest: [22, -4, 0] }),
-    k(0.7, [0.16, -0.74, 0.5], [104, 0, 0], { chest: [24, -4, 0] }),
+    k(0.62, [0.38, -0.7, 0.3], [100, 0, 0], { chest: [22, -4, 0] }), // a log on a chopping block
+    k(0.7, [0.38, -0.72, 0.3], [104, 0, 0], { chest: [24, -4, 0] }),
     k(1.05, HOLDS.toolReady.pos, HOLDS.toolReady.rot),
   ], events: [{ t: 0.62, name: 'hit', socket: 'head' }] },
   dig: { duration: 1.6, keys: [
     k(0, HOLDS.shovelReady.pos, HOLDS.shovelReady.rot),
-    k(0.35, [0.22, -0.25, 0.3], [160, 0, 0], { chest: [20, 0, 0] }),
-    k(0.55, [0.22, -0.45, 0.32], [168, 0, 0], { chest: [30, 0, 0] }),
-    k(0.9, [0.2, -0.3, 0.1], [130, 0, 0], { chest: [12, 0, 0] }),
-    k(1.2, [0.25, -0.15, 0.2], [120, -40, 30], { chest: [5, 25, 0] }),
+    k(0.4, [0.1, -0.3, 0.3], [168, 0, 60], { chest: [22, 0, 0] }),
+    k(0.6, [0.1, -0.36, 0.32], [170, 0, 60], { chest: [28, 0, 0] }),
+    k(0.95, [0.12, -0.25, 0.14], [145, 0, 60], { chest: [14, 0, 0] }),
+    k(1.25, [0.18, -0.08, 0.22], [125, -30, 70], { chest: [4, 22, 0] }),
     k(1.6, HOLDS.shovelReady.pos, HOLDS.shovelReady.rot),
-  ], events: [{ t: 0.55, name: 'hit', socket: 'head' }, { t: 1.2, name: 'toss', socket: 'head' }] },
+  ], events: [{ t: 0.6, name: 'hit', socket: 'head' }, { t: 1.25, name: 'toss', socket: 'head' }] },
   hammer: { duration: 0.5, keys: [
     k(0, [0.05, -0.35, 0.42], [70, 0, 0]),
     k(0.2, [0.05, -0.15, 0.3], [-30, 0, 0]),
@@ -118,6 +118,7 @@ export class PropHandler {
   // run an action for as long as a promise (e.g. a gun's reload clip)
   during(name, promise) { const a = ACTIONS[name]; if (!a) return promise; this.action = { ...a, name, speed: 1, ev: 0, duration: Infinity, loopPose: true }; this.t = 0; return promise.then((r) => { this.action = null; return r; }); }
   get busy() { return !!this.action; }
+  _reach(B) { const sk = this.c.skeleton, bn = sk.bones; return (this._r ||= vec3.dist(bn[B.upper].head, bn[B.fore].head) + vec3.dist(bn[B.fore].head, bn[B.hand].head)); }
 
   // after the animation mixer: place the prop, solve both arms, pose the fingers
   update(dt) {
@@ -167,7 +168,22 @@ export class PropHandler {
     const sup = prop.twoHanded && prop.support && !(this.action && this.action.support === 'free');
     if (sup) {
       const O = this.side === 'R' ? 'L' : 'R', S = this.bones[O];
-      const sp = vec3.transformMat4([0, 0, 0], prop.support.position, realProp);
+      let sp = vec3.transformMat4([0, 0, 0], prop.support.position, realProp);
+      // on a handle the top hand slides toward the bottom one when the swing takes it out of reach
+      if (prop.support.slideFrom) {
+        const sh = sk.worldHead(S.upper), reach = this._reach(S) * 0.97;
+        if (vec3.dist(sh, sp) > reach) {
+          const a = vec3.transformMat4([0, 0, 0], prop.support.slideFrom, realProp);
+          let best = sp, bd = Infinity;
+          for (let i = 0; i <= 16; i++) {
+            const t = i / 16, q2 = vec3.lerp([0, 0, 0], sp, a, t), d = vec3.dist(sh, q2);
+            const cost = Math.max(0, d - reach) * 10 + t; // reachable first, then as close to the usual grip as possible
+            if (cost < bd) { bd = cost; best = q2; }
+          }
+          sp = best;
+        }
+      }
+      this.supportPoint = sp;
       twoBoneIK(sk, S.upper, S.fore, S.hand, sp, O === 'L' ? [0.7, -1, -0.2] : [-0.7, -1, -0.2]);
       const sr = quat.multiply(quat.create(), mat4.getRotation(quat.create(), realProp), q(prop.support.rotation || [0, 0, O === 'L' ? -90 : 90]));
       setWorldRotation(sk, S.hand, sr);

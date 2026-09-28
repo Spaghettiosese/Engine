@@ -51,7 +51,7 @@ const BUILD = {
     k.box(M.metal, [0, hy, -0.01 * s], [0.03 * s, 0.075 * s, 0.07 * s], [0, 0, 0], 0.004);       // eye + poll
     blade(k, M.metal, [[0, -0.035], [0.1, -0.075], [0.115, -0.07], [0.12, 0.05], [0.105, 0.06], [0, 0.035]].map(([z, y]) => [z * s, y * s]), [0, hy, 0.02 * s], 0.014 * s);
     blade(k, M.edge, [[0.1, -0.074], [0.12, -0.07], [0.125, 0.05], [0.106, 0.058]].map(([z, y]) => [z * s, y * s]), [0, hy, 0.02 * s], 0.016 * s);
-    t.add(node('Axe', k)); t.sockets.head = [0, hy, 0.14 * s]; t.support = { position: [0, L * 0.55, 0], pose: SUPPORT }; t.twoHanded = true;
+    t.add(node('Axe', k)); t.sockets.head = [0, hy, 0.14 * s]; t.support = { position: [0, L * 0.35, 0], slideFrom: [0, 0.1 * s, 0], pose: SUPPORT }; t.twoHanded = true;
   },
   hatchet(p, M, t, s) { BUILD.axe({ ...p, handle: p.handle * 0.5 }, M, t, s * 0.8); t.twoHanded = false; t.support = null; },
   pickaxe(p, M, t, s) {
@@ -60,7 +60,7 @@ const BUILD = {
     k.box(M.metal, [0, L - 0.01, 0], [0.04 * s, 0.07 * s, 0.045 * s], [0, 0, 0], 0.005);
     k.add(M.metal, tube({ path: [[0, L - 0.01, 0], [0, L + 0.01 * s, 0.14 * s], [0, L - 0.06 * s, 0.28 * s]], radii: [0.018 * s, 0.012 * s, 0.002], radialSegments: 10, samples: 8, flatten: 1 }));
     k.add(M.metal, tube({ path: [[0, L - 0.01, 0], [0, L + 0.005 * s, -0.12 * s], [0, L - 0.04 * s, -0.24 * s]], radii: [0.018 * s, 0.014 * s, 0.01 * s], radialSegments: 10, samples: 8, flatten: 0.35 }));
-    t.add(node('Pickaxe', k)); t.sockets.head = [0, L - 0.06 * s, 0.28 * s]; t.support = { position: [0, L * 0.5, 0], pose: SUPPORT }; t.twoHanded = true;
+    t.add(node('Pickaxe', k)); t.sockets.head = [0, L - 0.06 * s, 0.28 * s]; t.support = { position: [0, L * 0.4, 0], slideFrom: [0, 0.1 * s, 0], pose: SUPPORT }; t.twoHanded = true;
   },
   shovel(p, M, t, s) {
     const L = 1.0 * p.handle * s, k = K();
@@ -70,7 +70,7 @@ const BUILD = {
     haft(k, M, 0.02 * s, L, { knob: false, r0: 0.016, r1: 0.016 });
     k.cyl(M.metal, [0, L + 0.03 * s, 0], 0.02 * s, 0.1 * s, [0, 0, 0], 10);
     k.add(M.metal, lathe({ points: [[0, 0], [0.13 * s, 0.02 * s], [0.14 * s, 0.2 * s], [0.08 * s, 0.3 * s], [0, 0.32 * s]], segments: 18, arc: 140 }), [0, L + 0.06 * s, 0.02 * s], [0, 110, 0], [1, 1, 0.35]);
-    t.add(node('Shovel', k)); t.sockets.head = [0, L + 0.3 * s, 0]; t.support = { position: [0, L * 0.6, 0], pose: SUPPORT }; t.twoHanded = true;
+    t.add(node('Shovel', k)); t.sockets.head = [0, L + 0.3 * s, 0]; t.support = { position: [0, L * 0.4, 0], slideFrom: [0, 0.1 * s, 0], pose: SUPPORT }; t.twoHanded = true;
   },
   hammer(p, M, t, s) {
     const L = 0.3 * p.handle * s, k = K();
@@ -84,14 +84,14 @@ const BUILD = {
     const L = 0.85 * p.handle * s, k = K();
     haft(k, M, -0.08 * s, L, { r0: 0.018, r1: 0.016 });
     k.box(M.metal, [0, L, 0], [0.07 * s, 0.07 * s, 0.2 * s], [0, 0, 0], 0.008);
-    t.add(node('Sledgehammer', k)); t.sockets.head = [0, L, 0.1 * s]; t.support = { position: [0, L * 0.7, 0], pose: SUPPORT }; t.twoHanded = true;
+    t.add(node('Sledgehammer', k)); t.sockets.head = [0, L, 0.1 * s]; t.support = { position: [0, L * 0.4, 0], slideFrom: [0, 0.1 * s, 0], pose: SUPPORT }; t.twoHanded = true;
   },
   pitchfork(p, M, t, s) {
     const L = 1.15 * p.handle * s, k = K();
     haft(k, M, -0.05 * s, L, { r0: 0.016, r1: 0.015 });
     k.box(M.metal, [0, L + 0.01 * s, 0], [0.16 * s, 0.02 * s, 0.018 * s], [0, 0, 0], 0.004);
     for (let i = 0; i < 4; i++) { const x = (-0.06 + i * 0.04) * s; k.add(M.metal, tube({ path: [[x, L + 0.01 * s, 0], [x, L + 0.15 * s, 0.03 * s], [x * 1.1, L + 0.3 * s, 0.015 * s]], radii: [0.005 * s, 0.004 * s, 0.001], radialSegments: 6, samples: 6, flatten: 1 })); }
-    t.add(node('Pitchfork', k)); t.sockets.head = [0, L + 0.3 * s, 0]; t.support = { position: [0, L * 0.6, 0], pose: SUPPORT }; t.twoHanded = true;
+    t.add(node('Pitchfork', k)); t.sockets.head = [0, L + 0.3 * s, 0]; t.support = { position: [0, L * 0.4, 0], slideFrom: [0, 0.1 * s, 0], pose: SUPPORT }; t.twoHanded = true;
   },
   saw(p, M, t, s) {
     const k = K();
