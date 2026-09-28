@@ -53,6 +53,8 @@ export function applyTimeOfDay(env, hours, { rays = true } = {}) {
   // light shafts are strongest when the sun is low
   env.godRays = rays && sunUp ? smoothstep(0.0, 0.08, sun[1]) * (1 - smoothstep(0.3, 0.7, sun[1])) * 0.9 + 0.15 * smoothstep(0, 0.2, sun[1]) : 0;
   env.rayColor = mix3([1, 0.55, 0.3], [1, 0.9, 0.75], smoothstep(0.05, 0.5, sun[1]));
+  // volumetric sun scattering: strong shafts at dawn and dusk, a faint haze at noon, moonlight at night
+  env.sunShafts = sunUp ? 0.04 + 0.9 * (1 - smoothstep(0.05, 0.45, sun[1])) : 0.35;
   env.timeOfDay = hours;
   return env;
 }

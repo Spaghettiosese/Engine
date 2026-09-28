@@ -146,6 +146,9 @@ export class Scene extends Node {
       // V2
       night: 0, moonDirection: [-0.4, 0.6, -0.5], fogHeight: 0,
       ao: true, aoRadius: 0.5, aoIntensity: 1.4, aoStrength: 1, godRays: 0, rayColor: [1, 0.85, 0.6], lights: true,
+      // V3: volumetric light (0 = off), soft shadows (sun size in degrees), weather
+      volumetric: 0.5, volumeDensity: 0.03, sunShafts: 0.25, lampGlow: 1, anisotropy: 0.6, volumeDistance: 60,
+      shadowSoftness: 2.5, wetness: 0, rain: 0,
     };
   }
 }

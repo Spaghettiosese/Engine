@@ -64,6 +64,33 @@ vec2 voronoi(vec3 p){
   return vec2(sqrt(d1), sqrt(d2));
 }`;
 
+
+// V3 weather: damp surfaces, puddles on flat ground and rain ripples in the puddles.
+export const WET = /* glsl */ `
+uniform float uWetness; uniform float uRain;
+float puddleMask(vec3 wp, vec3 n){
+  if(uWetness <= 0.0) return 0.0;
+  float up = smoothstep(0.8, 0.97, n.y);
+  vec3 q = vec3(wp.x, 0.0, wp.z);
+  float m = fbm(q * 0.42) + 0.15 * fbm(q * 2.7 + 5.0);
+  float th = 0.8 - uWetness * 0.3;
+  return up * smoothstep(th, th + 0.035, m);
+}
+vec2 rainRipples(vec2 p, float t){
+  vec2 acc = vec2(0.0);
+  for(int j = -1; j <= 1; j++) for(int i = -1; i <= 1; i++){
+    vec2 c = floor(p) + vec2(float(i), float(j));
+    float h = hash12(c);
+    vec2 o = c + vec2(hash12(c + 3.1), hash12(c + 7.7));
+    float ph = fract(t * 0.85 + h);
+    vec2 d = p - o; float r = length(d);
+    float w = exp(-pow((r - ph * 0.8) * 16.0, 2.0)) * (1.0 - ph) * sin((r - ph * 0.8) * 60.0);
+    acc += (r > 1e-4 ? d / r : vec2(0.0)) * w;
+  }
+  return acc;
+}
+`;
+
 export const MAIN_FS = /* glsl */ `#version 300 es
 precision highp float;
 precision highp sampler2DShadow;
@@ -88,8 +115,12 @@ uniform vec4 uLightColor[MAX_LIGHTS]; // rgb * intensity, w: 0 point / 1 spot
 uniform vec4 uLightSpot[MAX_LIGHTS];  // xyz direction, w cos(outer angle)
 uniform sampler2D uAO; uniform bool uUseAO; uniform vec2 uScreen; uniform float uAOStrength;
 uniform float uFogHeight;             // height falloff (0 = uniform fog)
+// V3: soft (PCSS) and contact shadows
+uniform sampler2D uShadowRaw; uniform float uShadowSoft;  // penumbra scale (0 = plain PCF)
+uniform sampler2D uGBuf; uniform bool uContact; uniform mat4 uView; uniform mat4 uProj;
 out vec4 outColor;
 ${NOISE}
+${WET}
 const float PI = 3.14159265;
 
 struct Surf { vec3 albedo; float rough; float metal; float h; float bump; float ao; };
@@ -307,9 +338,37 @@ float shadowFactor(vec3 N){
   mat2 R = mat2(cos(ang),sin(ang),-sin(ang),cos(ang));
   vec2 taps[12] = vec2[](vec2(-0.326,-0.406),vec2(-0.840,-0.074),vec2(-0.696,0.457),vec2(-0.203,0.621),vec2(0.962,-0.195),vec2(0.473,-0.480),
                          vec2(0.519,0.767),vec2(0.185,-0.893),vec2(0.507,0.064),vec2(0.896,0.412),vec2(-0.322,-0.933),vec2(-0.792,-0.598));
+  float radius = 2.2;
+  if(uShadowSoft > 0.0){
+    // PCSS: average blocker depth -> penumbra width, so shadows are sharp at contact and soften with distance
+    float bsum = 0.0, bn = 0.0;
+    for(int i=0;i<12;i++){ float d = texture(uShadowRaw, sc.xy + R*taps[i]*uShadowTexel*14.0).r; if(d < sc.z - bias){ bsum += d; bn += 1.0; } }
+    if(bn < 0.5) return 1.0;
+    float pen = (sc.z - bsum/bn) * uShadowSoft / uShadowTexel;
+    radius = clamp(pen, 1.2, 16.0);
+  }
   float s = 0.0;
-  for(int i=0;i<12;i++){ s += texture(uShadowMap, vec3(sc.xy + R*taps[i]*uShadowTexel*2.2, sc.z - bias)); }
+  for(int i=0;i<12;i++){ s += texture(uShadowMap, vec3(sc.xy + R*taps[i]*uShadowTexel*radius, sc.z - bias)); }
   return s/12.0;
+}
+
+// Screen-space contact shadows: a short ray toward the sun through the depth buffer catches
+// the small, sharp shadows (feet on the floor, props on shelves) the shadow map is too coarse for.
+float contactShadow(vec3 wp, vec3 N){
+  if(!uContact) return 1.0;
+  vec3 vp = (uView * vec4(wp + N*0.015, 1.0)).xyz, vl = mat3(uView) * uSunDir;
+  float j = hash12(gl_FragCoord.xy + uTime);
+  for(int i = 0; i < 10; i++){
+    float t = 0.03 + (float(i) + j) * 0.03;
+    vec3 q = vp + vl * t;
+    vec4 c = uProj * vec4(q, 1.0);
+    vec2 uv = c.xy / c.w * 0.5 + 0.5;
+    if(uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
+    float sd = texture(uGBuf, uv).w;
+    float dq = -q.z;
+    if(sd > 0.0 && dq > sd + 0.015 && dq < sd + 0.25) return 1.0 - smoothstep(0.0, 1.0, 1.0 - float(i) / 10.0) * 0.85;
+  }
+  return 1.0;
 }
 
 vec3 skyAt(vec3 d){
@@ -339,7 +398,16 @@ void main(){
   }
   Surf s = Surf(uBaseColor, uRoughness, uMetallic, 0.0, 0.0, 1.0);
   if(uPattern>0) s = pattern(s);
+  float pud = 0.0;
+  if(uWetness > 0.0 && uShading != 1){ // rain: porous surfaces darken, everything turns glossy, puddles mirror
+    float damp = uWetness * (0.5 + 0.5*smoothstep(-0.3, 0.7, N.y));
+    pud = puddleMask(vWorld, N);
+    s.albedo *= mix(1.0, 0.6, damp * (1.0 - s.metal) * 0.8);
+    s.rough = mix(s.rough, s.rough * 0.45, damp);
+    s.rough = mix(s.rough, 0.02, pud); s.albedo *= 1.0 - 0.3*pud; s.bump *= 1.0 - pud;
+  }
   if(s.bump>0.0 && uBump>0.0) N = perturb(N, vWorld, s.h, s.bump*uBump*0.02);
+  if(pud > 0.0 && uRain > 0.0){ vec2 rp = rainRipples(vWorld.xz * 2.6, uTime); N = normalize(N + vec3(rp.x, 0.0, rp.y) * 0.35 * uRain * pud); }
   float NoV = max(dot(N,V), 1e-4);
 
   if(uShading==1){ // studio "solid" mode
@@ -352,6 +420,7 @@ void main(){
   }
 
   float sh = shadowFactor(N);
+  if(sh > 0.0 && dot(N, uSunDir) > 0.0) sh *= contactShadow(vWorld, normalize(vNormal));
   vec3 L = uSunDir;
   vec3 H = normalize(L+V);
   float NoL = max(dot(N,L),0.0), NoH = max(dot(N,H),0.0), VoH = max(dot(V,H),0.0);
@@ -551,6 +620,8 @@ uniform sampler2D uColor; uniform sampler2D uBloom;
 uniform float uExposure; uniform float uVignette; uniform float uGrain; uniform float uTime; uniform bool uTonemap; uniform float uBloomStrength;
 uniform vec2 uTexel; uniform bool uFXAA;
 uniform vec2 uSunUV; uniform float uGodRays; uniform vec3 uRayColor;
+uniform sampler2D uBloom2; uniform sampler2D uBloom3;
+uniform float uSaturation; uniform float uContrast; uniform vec3 uWhite; uniform float uSharpen; uniform float uAberration;
 out vec4 outColor;
 vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
 float luma(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }
@@ -571,7 +642,15 @@ vec3 fxaa(vec2 uv){
 }
 void main(){
   vec3 c = uFXAA ? fxaa(vUV) : texture(uColor, vUV).rgb;
-  c += texture(uBloom, vUV).rgb * uBloomStrength;
+  if(uAberration > 0.0){ // slight lens fringing toward the corners
+    vec2 off = (vUV - 0.5) * uAberration * 0.004;
+    c.r = texture(uColor, vUV + off).r; c.b = texture(uColor, vUV - off).b;
+  }
+  if(uSharpen > 0.0){ // contrast-adaptive sharpening
+    vec3 nb = texture(uColor, vUV + vec2(uTexel.x, 0.0)).rgb + texture(uColor, vUV - vec2(uTexel.x, 0.0)).rgb + texture(uColor, vUV + vec2(0.0, uTexel.y)).rgb + texture(uColor, vUV - vec2(0.0, uTexel.y)).rgb;
+    c = max(c + (c - nb * 0.25) * uSharpen / (1.0 + luma(c)), vec3(0.0));
+  }
+  c += (texture(uBloom, vUV).rgb + texture(uBloom2, vUV).rgb * 0.9 + texture(uBloom3, vUV).rgb * 0.8) * uBloomStrength;
   if(uGodRays > 0.0){
     // screen-space light scattering: march toward the sun through the bright (bloom) buffer
     vec2 dir = (vUV - uSunUV) / 40.0;
@@ -580,7 +659,11 @@ void main(){
     c += acc / 40.0 * uGodRays * uRayColor;
   }
   if(uTonemap){
+    c *= uWhite;
     c = aces(c*uExposure);
+    float l = luma(c);
+    c = mix(vec3(l), c, uSaturation);
+    c = clamp((c - 0.5) * uContrast + 0.5, 0.0, 1.0);
     c = pow(c, vec3(1.0/2.2));
   }
   vec2 q = vUV-0.5;
@@ -601,6 +684,9 @@ void main(){
     c /= 9.0;
     float l = max(c.r, max(c.g, c.b));
     outColor = vec4(c * max(l-uThreshold,0.0)/max(l,1e-4), 1.0);
+  } else if(uPass==2){ // plain 4-tap downsample for the wider bloom levels
+    vec3 c = texture(uColor, vUV + uTexel*vec2(-0.5,-0.5)).rgb + texture(uColor, vUV + uTexel*vec2(0.5,-0.5)).rgb + texture(uColor, vUV + uTexel*vec2(-0.5,0.5)).rgb + texture(uColor, vUV + uTexel*vec2(0.5,0.5)).rgb;
+    outColor = vec4(c*0.25, 1.0);
   } else {
     // separable 9-tap gaussian; uTexel carries the direction
     vec3 c = texture(uColor, vUV).rgb*0.227;
@@ -614,13 +700,22 @@ export const GBUF_FS = /* glsl */ `#version 300 es
 precision highp float;
 in vec3 vWorld; in vec3 vNormal; in vec2 vUV; in vec3 vRest; in vec3 vRestN; in vec4 vShadow;
 uniform mat4 uView; uniform bool uDoubleSided;
-out vec4 outColor;
+uniform float uRoughness; uniform float uMetallic; uniform int uPattern; uniform float uTime;
+layout(location=0) out vec4 outG;   // view-space normal, linear depth
+layout(location=1) out vec4 outM;   // roughness, metallic, puddle, 1
+${NOISE}
+${WET}
 void main(){
   vec3 n = normalize(vNormal);
   if(uDoubleSided && !gl_FrontFacing) n = -n;
+  float rough = uRoughness, metal = uMetallic;
+  if(uPattern == 19){ rough = 0.05; metal = 0.4; } // window glass
+  float pud = 0.0;
+  if(uWetness > 0.0){ float damp = uWetness * (0.5 + 0.5*smoothstep(-0.3, 0.7, n.y)); pud = puddleMask(vWorld, n); rough = mix(mix(rough, rough*0.45, damp), 0.02, pud); }
   vec3 vn = normalize(mat3(uView) * n);
   float d = -(uView * vec4(vWorld, 1.0)).z;
-  outColor = vec4(vn, d);
+  outG = vec4(vn, d);
+  outM = vec4(rough, metal, pud, 1.0);
 }`;
 
 export const SSAO_FS = /* glsl */ `#version 300 es
@@ -666,4 +761,141 @@ void main(){
     sum += texture(uAO, uv).r * w; wsum += w;
   }
   outColor = vec4(vec3(sum / max(wsum, 1e-4)), 1.0);
+}`;
+
+
+// V3 screen-space reflections (half resolution): march the reflected view ray through the
+// depth buffer, refine the hit with a binary search and fetch the lit colour there.
+export const SSR_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uG; uniform sampler2D uM; uniform sampler2D uColor;
+uniform mat4 uProj; uniform vec2 uTan; uniform float uMaxRough; uniform float uTime;
+out vec4 outColor;
+float h12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*0.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+vec3 viewPos(vec2 uv, float d){ vec2 ndc = uv*2.0-1.0; return vec3(ndc.x*uTan.x*d, ndc.y*uTan.y*d, -d); }
+vec2 project(vec3 q){ vec4 c = uProj * vec4(q, 1.0); return c.xy / c.w * 0.5 + 0.5; }
+void main(){
+  vec4 g = texture(uG, vUV); vec4 m = texture(uM, vUV);
+  if(g.w <= 0.0 || m.r > uMaxRough){ outColor = vec4(0.0); return; }
+  vec3 p = viewPos(vUV, g.w), n = normalize(g.xyz), v = normalize(p);
+  vec3 r = normalize(reflect(v, n));
+  float stepLen = 0.08 + 0.02 * g.w * 0.1, t = stepLen * (0.5 + h12(gl_FragCoord.xy + fract(uTime) * 61.0));
+  vec2 hit = vec2(-1.0); float travelled = 0.0;
+  for(int i = 0; i < 48; i++){
+    vec3 q = p + r * t;
+    if(q.z > -0.05) break;
+    vec2 uv = project(q);
+    if(uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
+    float sd = texture(uG, uv).w, qd = -q.z;
+    if(sd > 0.0 && qd > sd + 0.02 && qd < sd + max(0.35, stepLen * 2.0)){
+      float a = t - stepLen, b = t;
+      for(int k = 0; k < 6; k++){ float mid = (a + b) * 0.5; vec3 qm = p + r * mid; float smd = texture(uG, project(qm)).w; if(-qm.z > smd) b = mid; else a = mid; }
+      hit = project(p + r * b); travelled = b; break;
+    }
+    stepLen *= 1.09; t += stepLen;
+  }
+  if(hit.x < 0.0){ outColor = vec4(0.0); return; }
+  vec3 col = texture(uColor, hit).rgb;
+  float edge = smoothstep(0.0, 0.07, min(min(hit.x, 1.0 - hit.x), min(hit.y, 1.0 - hit.y)));
+  float conf = edge * (1.0 - smoothstep(uMaxRough * 0.5, uMaxRough, m.r)) * (1.0 - smoothstep(0.35, 0.85, r.z)) * (1.0 - smoothstep(25.0, 45.0, travelled));
+  outColor = vec4(min(col, vec3(40.0)), conf);
+}`;
+
+// V3 volumetric lighting (half resolution): raymarch the camera ray through height fog,
+// adding sun light where the shadow map says it's lit and light from nearby lamps and spots.
+export const VOLUME_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp sampler2DShadow;
+in vec2 vUV;
+uniform sampler2D uG; uniform sampler2DShadow uShadowMap; uniform bool uShadows;
+uniform mat4 uInvView; uniform mat4 uShadowVP; uniform vec2 uTan; uniform vec3 uCamPos;
+uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uDensity; uniform float uFogHeight; uniform float uSunScatter; uniform float uLightScatter;
+uniform float uMaxDist; uniform float uTime; uniform float uAniso;
+#define MAX_LIGHTS 16
+uniform int uLightCount; uniform vec4 uLightPos[MAX_LIGHTS]; uniform vec4 uLightColor[MAX_LIGHTS]; uniform vec4 uLightSpot[MAX_LIGHTS];
+out vec4 outColor;
+float h12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*0.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+float hg(float c, float g){ float g2 = g*g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0*g*c, 1.5)); }
+void main(){
+  float d = texture(uG, vUV).w;
+  vec3 vd = normalize(vec3((vUV*2.0-1.0)*uTan, -1.0));
+  float T = (d > 0.0 ? min(d, uMaxDist) : uMaxDist) / -vd.z;
+  vec3 dir = normalize(mat3(uInvView) * vd);
+  const int STEPS = 20;
+  float dt = T / float(STEPS), j = h12(gl_FragCoord.xy + fract(uTime)*97.0);
+  float cs = dot(dir, uSunDir), sunPhase = hg(cs, uAniso) + 0.02;
+  vec3 acc = vec3(0.0); float trans = 1.0;
+  for(int i = 0; i < STEPS; i++){
+    float t = (float(i) + j) * dt;
+    vec3 p = uCamPos + dir * t;
+    float dens = uDensity * (uFogHeight > 0.0 ? exp(-max(p.y, 0.0) * uFogHeight) : 1.0);
+    vec3 L = vec3(0.0);
+    if(uSunScatter > 0.0){
+      float lit = 1.0;
+      if(uShadows){ vec4 sp = uShadowVP * vec4(p, 1.0); vec3 sc = sp.xyz / sp.w * 0.5 + 0.5; if(sc.x > 0.0 && sc.x < 1.0 && sc.y > 0.0 && sc.y < 1.0 && sc.z < 1.0) lit = texture(uShadowMap, vec3(sc.xy, sc.z - 0.002)); }
+      L += uSunColor * lit * sunPhase * uSunScatter;
+    }
+    for(int k = 0; k < MAX_LIGHTS; k++){
+      if(k >= uLightCount) break;
+      vec3 Lv = uLightPos[k].xyz - p; float d2 = dot(Lv, Lv), r = uLightPos[k].w;
+      if(d2 > r*r) continue;
+      float win = clamp(1.0 - pow(d2/(r*r), 2.0), 0.0, 1.0), att = win*win / (d2 + 0.3);
+      if(uLightColor[k].w > 0.5){ float cd = dot(-Lv * inversesqrt(max(d2,1e-6)), uLightSpot[k].xyz); att *= smoothstep(uLightSpot[k].w, mix(uLightSpot[k].w, 1.0, 0.25), cd) * 3.0; }
+      L += uLightColor[k].rgb * att * uLightScatter * 0.08;
+    }
+    acc += L * dens * trans * dt;
+    trans *= exp(-dens * dt);
+  }
+  outColor = vec4(acc, trans);
+}`;
+
+// Depth-aware 5x5 blur for half-resolution effect buffers (SSR, volumetrics)
+export const BILATERAL_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vUV; uniform sampler2D uSrc; uniform sampler2D uG; uniform vec2 uTexel; uniform float uScale;
+out vec4 outColor;
+void main(){
+  float d0 = texture(uG, vUV).w; vec4 sum = vec4(0.0); float wsum = 0.0;
+  for(int y = -2; y <= 2; y++) for(int x = -2; x <= 2; x++){
+    vec2 uv = vUV + vec2(x, y) * uTexel * uScale;
+    float d = texture(uG, uv).w;
+    float w = exp(-float(x*x + y*y) * 0.18) / (1.0 + abs(d - d0) * 6.0);
+    sum += texture(uSrc, uv) * w; wsum += w;
+  }
+  outColor = sum / max(wsum, 1e-4);
+}`;
+
+// Combine the lit frame with reflections and volumetric light (still HDR).
+export const COMPOSITE_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uColor; uniform sampler2D uSSR; uniform sampler2D uVol; uniform sampler2D uG; uniform sampler2D uM;
+uniform bool uUseSSR; uniform bool uUseVol; uniform float uSSRStrength;
+uniform mat4 uInvView; uniform vec2 uTan;
+uniform vec3 uHorizon; uniform vec3 uZenith; uniform vec3 uGroundColor; uniform float uAmbient;
+out vec4 outColor;
+vec3 skyAt(vec3 d){
+  float t = clamp(d.y*0.5+0.5, 0.0, 1.0);
+  vec3 c = mix(uGroundColor*0.9, uHorizon, smoothstep(0.35, 0.5, t));
+  return mix(c, uZenith, smoothstep(0.5, 0.95, t));
+}
+void main(){
+  vec3 c = texture(uColor, vUV).rgb;
+  if(uUseSSR){
+    vec4 r = texture(uSSR, vUV);
+    if(r.a > 0.001){
+      vec4 g = texture(uG, vUV), m = texture(uM, vUV);
+      vec3 v = normalize(vec3((vUV*2.0-1.0)*uTan, -1.0)), n = normalize(g.xyz);
+      float NoV = clamp(dot(n, -v), 0.0, 1.0);
+      float F0 = mix(0.04, 0.75, m.g), F = F0 + (1.0 - F0) * pow(1.0 - NoV, 5.0);
+      F *= 1.0 - m.r * 0.8;
+      vec3 R = mat3(uInvView) * reflect(v, n);
+      // swap the sky reflection the lit pass assumed for what the ray actually hit
+      vec3 add = (r.rgb - skyAt(R) * uAmbient * 0.8) * F * r.a * uSSRStrength;
+      c = max(c + add, c * 0.25);
+    }
+  }
+  if(uUseVol) c += texture(uVol, vUV).rgb;
+  outColor = vec4(c, 1.0);
 }`;
