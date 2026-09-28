@@ -1,0 +1,176 @@
+# ShapeForge Engine
+
+A zero-dependency WebGL2 engine for building 3D characters out of parametric shapes, rigging them to skeletons and animating them. It comes with three front ends:
+
+| Page | What it is |
+| --- | --- |
+| `index.html` | Landing page with a live render of the Cowboy cycling through his clips |
+| `editor.html` | **ShapeForge Studio**, a Blender-style editor (layout, hotkeys, modes, dope sheet) |
+| `viewer.html` | **Animation Viewer**: crossfades, root motion, WASD play mode, onion skins, exports |
+
+Everything is plain ES modules. No build step, no npm dependencies.
+
+```bash
+npm start          # serves the folder on http://localhost:8080 (any static server works)
+npm test           # geometry, animation and export checks (Node 18+)
+```
+
+ES modules don't load from `file://`, so open the pages through a local server.
+
+---
+
+## The Cowboy
+
+`src/content/cowboy.js` builds the Cowboy from primitives and modifiers only:
+
+- **Hat**: lathed crown with a cattleman crease, lathed brim curled with two Bend modifiers, a hat band and a silver gear concho
+- **Face**: superquadric head shaped with a Sculpt Profile, square jaw, tapered nose, eyes with a procedural iris and pupil, eyelids, brows, and a handlebar mustache swept along a spline
+- **Torso**: superquadric plaid shirt, open leather vest (partial superquadric + Solidify), sheriff star badge, pearl snap buttons made with an Array modifier, collar points, bandana with a spring-bone flap
+- **Belt line**: belt, rodeo buckle with a gold star, holster and revolver on a spring bone, a coiled lasso (Array of tori)
+- **Arms and legs**: tube-swept sleeves and jeans with automatic weights for smooth elbows and knees, gauntlet gloves with fingers, leather chaps with fringe, boots with stacked heels and spurs with star rowels
+
+51 part definitions (64 meshes once the mirrored left/right twins are generated), 24 bones, about 67k triangles, 22 materials.
+
+### Clips
+
+| Clip | Length | Root motion | How it was made |
+| --- | --- | --- | --- |
+| Idle | 4.00 s | in place | Feet planted with IK, breathing, weight shift, left thumb hooked in the belt, head glances |
+| Walk | 1.06 s | 1.15 m/s | Gait synthesizer: heel strike → flat foot → heel-off → toe-off, pelvis sway and counter-rotating shoulders |
+| Run | 0.68 s | 2.90 m/s | Gait synthesizer: 36% stance with a flight phase, forward lean, bent elbows, high heel kick |
+| Crawl | 1.60 s | 0.30 m/s | Hands and knees, diagonal limb pairs, palms and knees planted with IK |
+
+Walk and Run share the `locomotion` sync group, so crossfading between them keeps the feet in step. `tools/test-animation.mjs` checks that every clip loops without a seam and that a planted foot slides less than 10 cm/s (it measures about 3 cm/s against a 115 cm/s walk).
+
+---
+
+## Engine API (`src/engine`)
+
+```js
+import { Renderer, Scene, Camera, OrbitControls, Character, runLoop } from './src/engine/index.js';
+
+const renderer = new Renderer(canvas);                 // WebGL2, HDR + MSAA, shadows, bloom
+const scene = new Scene();
+const camera = new Camera();
+const controls = new OrbitControls(camera, canvas, { leftButtonOrbit: true });
+
+const cowboy = await Character.fromURL('assets/cowboy.json');
+scene.add(cowboy);
+cowboy.play('Walk');                                   // crossfade (default 0.35 s)
+cowboy.mixer.on((event) => { if (event.name === 'footstep') { /* dust, audio… */ } });
+
+runLoop((dt) => {
+  cowboy.update(dt);                                   // mixer + spring bones
+  renderer.render(scene, camera, { background: 'sky' });
+});
+```
+
+| Module | Contents |
+| --- | --- |
+| `math.js` | vec3 / quat / mat4, Euler (XYZ, degrees), seeded RNG, value noise |
+| `geometry.js` | `Geometry`, and 12 shapes: cube, rounded cube, UV sphere, superquadric, cylinder, cone, torus, capsule, plane, lathe, tube sweep, extruded outline (star, gear, heart, polygon, arrow, circle) |
+| `modifiers.js` | Taper, Twist, Bend, Displace (noise), Inflate, Flatten, Sculpt Profile, Wave, Smooth, Solidify, Mirror, Array; `buildShape(shape, modifiers)` |
+| `scene.js` | `Node`, `Mesh`, `Camera`, `Scene` (sun, sky, fog, exposure), `Material` with 13 procedural patterns |
+| `skeleton.js` | `Skeleton` (pose, joint matrices, spring bones), `computeSkinWeights` (rigid or automatic) |
+| `animation.js` | `Clip` (smooth / linear / constant keys, events, root motion, sync groups), `Mixer` (crossfades, blend weights, phase sync) |
+| `character.js` | `Character`: skeleton + parts + materials + clips, JSON round-trip, automatic left/right mirroring |
+| `ik.js` | Two-bone IK, aim constraints, world-space rotation helpers |
+| `gait.js` | Procedural gait synthesizer: `synthesizeLocomotion`, `synthesizeCrawl`, `synthesizeIdle` |
+| `renderer.js` / `shaders.js` | Forward renderer: GGX PBR, 12-tap PCF shadows, procedural sky with mesas and clouds, derivative bump mapping, bloom, ACES, FXAA fallback, selection outlines, onion-skin ghosts, particles, GPU picking |
+| `controls.js` | Orbit / pan / zoom with Blender bindings and touch support |
+| `particles.js` | Soft point-sprite particles (footstep dust) |
+| `io.js` | Export binary glTF 2.0 (skin, PBR factors, every clip) and OBJ (posed) |
+| `debug.js` | Skeleton lines, octahedral bone meshes, ghost posing |
+
+### Blending locomotion from a speed value
+
+```js
+const s = speed;                                    // 0 … 3 m/s
+cowboy.mixer.setWeights(s < 1.15
+  ? { Idle: 1 - s / 1.15, Walk: s / 1.15 }
+  : { Walk: 1 - (s - 1.15) / 1.85, Run: (s - 1.15) / 1.85 });
+const v = cowboy.mixer.rootVelocity()[2];            // move the character by this
+```
+
+### Character file format
+
+```jsonc
+{
+  "format": "shapeforge-character", "version": 1, "name": "Cowboy",
+  "skeleton": [{ "name": "thigh.L", "parent": "hips", "head": [0.095, 0.95, 0], "tail": [0.105, 0.53, 0.01], "mirror": true }],
+  "materials": { "jeans": { "color": "#27405f", "roughness": 0.92, "pattern": "denim", "patternScale": 260 } },
+  "parts": [{
+    "name": "Jeans Leg", "material": "jeans", "mirror": true,
+    "shape": { "type": "tube", "path": [[0.092, 1.0, 0], [0.105, 0.53, 0.02], [0.11, 0.17, -0.012]], "radii": [0.082, 0.055, 0.062] },
+    "modifiers": [{ "type": "solidify", "thickness": 0.004 }],
+    "bind": { "bones": ["hips", "thigh.L", "shin.L"], "falloff": 7 },
+    "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]
+  }],
+  "clips": [{ "name": "Walk", "duration": 1.06, "loop": true, "rootMotion": [0, 0, 1.15], "syncGroup": "locomotion",
+              "events": [{ "t": 0, "name": "footstep", "side": "L" }],
+              "tracks": [{ "bone": "hips", "type": "rotation", "interp": "smooth", "keys": [{ "t": 0, "v": [3, -6, 0] }] }] }]
+}
+```
+
+Conventions: +Y up, characters face +Z, the character's left is +X, rotations are XYZ Euler in degrees. Bones and parts marked `mirror` get a `.R` twin automatically.
+
+---
+
+## ShapeForge Studio (`editor.html`)
+
+The layout follows Blender: menu bar and workspaces (Layout, Modeling, Animation, Shading), a tool shelf, the 3D viewport with its header, navigation gizmo and info text, the Outliner, the Properties editor with tabs (World, Object, Modifiers, Shape Data, Material, Rig, Animation), the Dope Sheet and a status bar with context hints.
+
+| Keys | Action |
+| --- | --- |
+| Middle drag / Alt + left drag | Orbit |
+| Shift + middle drag · wheel | Pan · zoom |
+| Left click · Shift click · drag | Select · extend · box select |
+| G · R · S | Move · rotate · scale, then X / Y / Z to constrain, type a number, Enter or click to confirm, Esc or right click to cancel |
+| Shift A | Add menu (meshes, shape presets, parts on the active armature, armatures, a new Cowboy) |
+| Shift D · X · H / Alt H | Duplicate · delete · hide / reveal |
+| Tab | Toggle Pose Mode |
+| I · Alt I | Insert · delete keyframe |
+| Space · ← → · ↑ ↓ | Play · step frames · jump between keys |
+| Numpad 1 / 3 / 7 (or 1 / 3 / 7), Ctrl flips · Numpad 5 · Numpad . · Home | Views · ortho toggle · frame selected · frame all |
+| Z · Alt Z | Shading menu · X-ray |
+| Ctrl Z · Ctrl Shift Z | Undo · redo (Edit › Undo History lists steps) |
+| F3 · F1 · N · Ctrl Space | Operator search · shortcuts · side panels · maximize viewport |
+
+Additional features:
+
+- **Motion Synth** (Animation tab): generates new gait actions (walk, cowboy swagger, sneak, jog, crawl, idle) from sliders for speed, cycle length, stance, hip height, lean, arm swing, bounce and step width.
+- **Auto keying** (● in the Dope Sheet) records pose edits as you make them; **onion skinning** shows ghosts three and six frames either side.
+- **Bind to Armature** (Rig tab) turns any mesh into a character part with rigid or automatic weights; **Unbind** turns it back.
+- Edit bones' rest positions, extrude child bones, and turn any bone into a spring (jiggle) bone.
+- Autosaves to browser storage. File › Save downloads the scene; Copy Scene as JSON and Import from Pasted JSON work where downloads are blocked.
+- Export glTF (.glb), OBJ, or the engine's character JSON. **Open Character in Viewer** hands the character to the Viewer.
+
+## Animation Viewer (`viewer.html`)
+
+- Click a clip (or press 1–9) to crossfade; the bar under each clip shows its live blend weight.
+- **In place**, **Roam** (root motion around a loop, camera follows) and **Play** (WASD or arrows, Shift to run, C to crawl) modes.
+- Skeleton, onion skin, wireframe and toon overlays; shadows, spring bones, footstep dust, set dressing, turntable, bloom and sun angle.
+- Scrub the timeline (footstep events are marked on it), step frames with ← → while paused.
+- Load any character JSON exported by the Studio.
+
+---
+
+## Project layout
+
+```
+index.html  editor.html  viewer.html
+assets/cowboy.json        baked Cowboy (npm run build:assets)
+src/engine/               the engine
+src/content/              cowboy.js (model + clips), scenery.js (desert set)
+src/editor/               Studio: core model, viewport, panels, dope sheet, widgets
+src/viewer/viewer.js      Animation Viewer
+src/ui/                   page styles
+tools/                    tests, asset baking, artifact packing, headless screenshot helper
+```
+
+## Known limits
+
+- There is no vertex-level Edit Mode; shapes are edited through their parameters and modifier stacks.
+- Fingers are modelled but not individually rigged; hands pose as a unit.
+- glTF export carries base colour, metallic and roughness; the procedural patterns are shader-only, so exported materials are flat colours.
+- Inside sandboxed frames that block downloads, the Studio offers copy-to-clipboard dialogs instead.

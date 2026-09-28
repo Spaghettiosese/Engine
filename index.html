@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ShapeForge Engine</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Rye&display=swap">
+<style>
+  :root {
+    --night: #17110e; --night-2: #211813; --sand: #eadbc4; --sand-2: #bba88f; --sand-3: #8a7866;
+    --brass: #e3a94f; --rust: #c4552e; --sage: #93b28c; --line: rgba(234, 219, 196, 0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--night); color: var(--sand); }
+  body { font: 17px/1.55 'Barlow Semi Condensed', 'Arial Narrow', system-ui, sans-serif; }
+  a { color: inherit; }
+  .hero { position: relative; min-height: min(78vh, 760px); display: grid; align-items: end; overflow: hidden; border-bottom: 1px solid var(--line); }
+  #stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(23,17,14,.92) 0%, rgba(23,17,14,.55) 38%, rgba(23,17,14,0) 62%), linear-gradient(0deg, rgba(23,17,14,.9), rgba(23,17,14,0) 40%); pointer-events: none; }
+  .hero-copy { position: relative; z-index: 1; padding: 48px clamp(16px, 5vw, 64px); max-width: 640px; display: grid; gap: 18px; }
+  .wordmark { font-family: 'Rye', Georgia, serif; font-size: clamp(44px, 7vw, 84px); line-height: .95; margin: 0; color: var(--sand); letter-spacing: .01em; text-wrap: balance; }
+  .wordmark span { color: var(--brass); }
+  .lede { margin: 0; font-size: clamp(18px, 2.2vw, 22px); color: var(--sand-2); max-width: 34ch; text-wrap: pretty; }
+  .ctas { display: flex; gap: 10px; flex-wrap: wrap; }
+  .cta { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 17px; border: 1px solid var(--line); background: rgba(255,255,255,.05); }
+  .cta.primary { background: var(--brass); color: #2a1407; border-color: transparent; }
+  .cta:hover { filter: brightness(1.08); }
+  :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
+  .now { font: 13px 'JetBrains Mono', ui-monospace, monospace; color: var(--sand-3); display: flex; gap: 14px; flex-wrap: wrap; }
+  .now b { color: var(--sand); font-weight: 600; }
+  main { padding: 0 clamp(16px, 5vw, 64px) 64px; max-width: 1180px; margin: 0 auto; }
+  h2 { font-family: 'Rye', Georgia, serif; font-weight: 400; font-size: clamp(26px, 3.4vw, 36px); margin: 56px 0 8px; color: var(--sand); }
+  .sub { color: var(--sand-2); margin: 0 0 22px; max-width: 62ch; }
+  .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .tool { padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--night-2); display: grid; gap: 10px; align-content: start; }
+  .tool h3 { margin: 0; font-size: 22px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .tool h3 a { font-size: 15px; color: var(--brass); text-decoration: none; font-weight: 600; white-space: nowrap; }
+  .tool ul { margin: 0; padding-left: 18px; color: var(--sand-2); display: grid; gap: 4px; }
+  .spec { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .spec div { padding: 16px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .spec dt { font-size: 12px; text-transform: uppercase; letter-spacing: .14em; color: var(--sand-3); margin: 0; }
+  .spec dd { margin: 4px 0 0; font: 600 26px 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--sand-3); font-weight: 600; }
+  td.num { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 14px; }
+  tr:last-child td { border-bottom: 0; }
+  pre { margin: 0; padding: 18px; background: #0f0b09; border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; font: 13.5px/1.6 'JetBrains Mono', ui-monospace, monospace; color: #e8d9c2; }
+  pre .k { color: var(--brass); } pre .s { color: var(--sage); } pre .c { color: var(--sand-3); }
+  footer { color: var(--sand-3); font-size: 14px; padding: 24px clamp(16px, 5vw, 64px) 40px; border-top: 1px solid var(--line); max-width: 1180px; margin: 0 auto; }
+  .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--sand-3); }
+  @media (max-width: 720px) {
+    .hero { min-height: 640px; align-items: end; }
+    .hero::after { background: linear-gradient(0deg, rgba(23,17,14,.96) 0%, rgba(23,17,14,.75) 45%, rgba(23,17,14,0) 75%); }
+  }
+  @media (prefers-reduced-motion: reduce) { .cta { transition: none; } }
+</style>
+</head>
+<body>
+<section class="hero">
+  <canvas id="stage" aria-label="Live render: the Cowboy moving through Idle, Walk, Run and Crawl"></canvas>
+  <div class="fallback" id="fallback" hidden>Live preview needs WebGL2.</div>
+  <div class="hero-copy">
+    <h1 class="wordmark">Shape<span>Forge</span></h1>
+    <p class="lede">A 3D model and animation engine where every character is built from shapes, rigged to bones and set in motion.</p>
+    <div class="ctas">
+      <a class="cta primary" href="editor.html">Open the Studio</a>
+      <a class="cta" href="viewer.html">Animation Viewer</a>
+    </div>
+    <div class="now" aria-live="polite"><span>now playing <b id="nowClip">Idle</b></span><span>crossfade <b id="nowFade">phase-synced</b></span></div>
+  </div>
+</section>
+<main>
+  <h2>Three tools, one engine</h2>
+  <p class="sub">The Studio edits, the Viewer previews, and games load the same JSON the Studio saves. Nothing is baked into a mesh file, so every part stays a live shape you can reshape later.</p>
+  <div class="tools">
+    <article class="tool">
+      <h3>Engine <a href="#use">API ↓</a></h3>
+      <ul>
+        <li>WebGL2 renderer: PBR, soft PCF sun shadows, HDR bloom, ACES tone mapping, MSAA</li>
+        <li>13 procedural materials (plaid, denim, leather, felt, skin, wood, metal…), bump-mapped in the shader</li>
+        <li>12 parametric shapes and 12 non-destructive modifiers</li>
+        <li>GPU skinning with automatic weights, spring bones, two-bone IK</li>
+        <li>Clip mixer with phase-synced crossfades and root motion</li>
+        <li>Exports glTF 2.0 (.glb) with skin and animations, plus OBJ</li>
+      </ul>
+    </article>
+    <article class="tool">
+      <h3>Studio <a href="editor.html">Open ↗</a></h3>
+      <ul>
+        <li>Blender layout: outliner, properties tabs, dope sheet, status bar</li>
+        <li>Blender hotkeys: G / R / S with X Y Z and typed values, Shift A, Tab, I, numpad views</li>
+        <li>Object and Pose modes, auto-keying, onion skins, undo history</li>
+        <li>Motion Synth: generate walk, swagger, sneak, jog, crawl or idle cycles from sliders</li>
+        <li>Bind any mesh into a character as a new part</li>
+      </ul>
+    </article>
+    <article class="tool">
+      <h3>Viewer <a href="viewer.html">Open ↗</a></h3>
+      <ul>
+        <li>Crossfade between clips and watch the blend weights live</li>
+        <li>Roam with root motion, or take control with WASD (Shift runs, C crawls)</li>
+        <li>Skeleton, onion skin, wireframe and toon overlays</li>
+        <li>Footstep events kick up dust; spring bones swing the bandana and holster</li>
+      </ul>
+    </article>
+  </div>
+
+  <h2>The Cowboy</h2>
+  <p class="sub">Modelled entirely from primitives and modifiers: a lathed hat with a bent brim, a superquadric torso under an open leather vest, tube-swept sleeves and chaps, a star badge, spurs with rowels, and a handlebar mustache swept along a spline.</p>
+  <dl class="spec" id="spec">
+    <div><dt>Parts</dt><dd id="sParts">—</dd></div>
+    <div><dt>Bones</dt><dd id="sBones">—</dd></div>
+    <div><dt>Triangles</dt><dd id="sTris">—</dd></div>
+    <div><dt>Materials</dt><dd id="sMats">—</dd></div>
+  </dl>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Clip</th><th>Length</th><th>Speed</th><th>Keyed channels</th><th>How it was made</th></tr></thead>
+      <tbody id="clipRows"></tbody>
+    </table>
+  </div>
+
+  <h2 id="use">Use it in a game</h2>
+  <p class="sub">No build step and no dependencies. Import the engine as ES modules and load a character the Studio saved.</p>
+<pre><span class="k">import</span> { Renderer, Scene, Camera, Character, runLoop } <span class="k">from</span> <span class="s">'./src/engine/index.js'</span>;
+
+<span class="k">const</span> renderer = <span class="k">new</span> Renderer(document.querySelector(<span class="s">'canvas'</span>));
+<span class="k">const</span> scene = <span class="k">new</span> Scene(), camera = <span class="k">new</span> Camera();
+<span class="k">const</span> cowboy = <span class="k">await</span> Character.fromURL(<span class="s">'assets/cowboy.json'</span>);
+scene.add(cowboy);
+cowboy.play(<span class="s">'Walk'</span>);                         <span class="c">// crossfades from whatever was playing</span>
+
+runLoop((dt) =&gt; {
+  <span class="k">if</span> (keys.shift) cowboy.play(<span class="s">'Run'</span>, { fade: <span class="s">0.3</span> }); <span class="c">// feet stay in step (sync group)</span>
+  cowboy.update(dt);
+  renderer.render(scene, camera);
+});</pre>
+</main>
+<footer>ShapeForge Engine · zero dependencies · WebGL2 · source in <code>src/engine</code>, Studio in <code>src/editor</code>, Viewer in <code>src/viewer</code>.</footer>
+<script type="module">
+  import * as E from './src/engine/index.js';
+  import { createCowboy } from './src/content/cowboy.js';
+  import { westernSet } from './src/content/scenery.js';
+  const canvas = document.getElementById('stage');
+  const cowboy = createCowboy();
+  const clips = [...cowboy.mixer.clips.values()];
+  const how = { Idle: 'Planted-feet IK, breathing, thumb hooked in belt', Walk: 'Gait synth: heel-strike → toe-off roll, 60% stance', Run: 'Gait synth: flight phase, 36% stance, forward lean', Crawl: 'Hands and knees, diagonal pairs, IK-planted palms' };
+  document.getElementById('sParts').textContent = cowboy.parts.reduce((a, p) => a + p.meshes.length, 0);
+  document.getElementById('sBones').textContent = cowboy.skeleton.length;
+  document.getElementById('sTris').textContent = cowboy.triangleCount.toLocaleString();
+  document.getElementById('sMats').textContent = cowboy.materials.size;
+  document.getElementById('clipRows').innerHTML = clips.map((c) => `<tr><td>${c.name}</td><td class="num">${c.duration.toFixed(2)} s</td><td class="num">${c.rootMotion[2] ? c.rootMotion[2].toFixed(2) + ' m/s' : 'in place'}</td><td class="num">${c.tracks.length}</td><td>${how[c.name] || ''}</td></tr>`).join('');
+  let renderer;
+  try { renderer = new E.Renderer(canvas); } catch { document.getElementById('fallback').hidden = false; }
+  if (renderer) {
+    const scene = new E.Scene(); scene.add(westernSet()); scene.add(cowboy);
+    const camera = new E.Camera(); camera.fov = 34 * E.DEG;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const order = ['Idle', 'Walk', 'Run', 'Walk', 'Crawl', 'Idle'];
+    let k = 0, timer = 0, yaw = 0, orbit = 0.9;
+    cowboy.play('Idle', { fade: 0 });
+    const narrow = () => innerWidth < 720;
+    E.runLoop((dt) => {
+      timer += dt;
+      if (timer > 4 && !reduce) { timer = 0; k = (k + 1) % order.length; cowboy.play(order[k], { fade: 0.6 }); document.getElementById('nowClip').textContent = order[k]; }
+      const v = cowboy.mixer.rootVelocity()[2];
+      yaw += (v / 5) * dt;
+      cowboy.position[0] += Math.sin(yaw) * v * dt; cowboy.position[2] += Math.cos(yaw) * v * dt;
+      cowboy.setEuler(0, yaw * 180 / Math.PI, 0);
+      cowboy.update(reduce ? 0 : dt);
+      orbit += dt * 0.06;
+      const p = cowboy.position, a = yaw + orbit, d = narrow() ? 4.4 : 3.6;
+      const side = narrow() ? 0 : -0.9; // push the cowboy right of the copy on wide screens
+      const right = [Math.cos(a), 0, -Math.sin(a)];
+      camera.target.set([p[0] + right[0] * side, 0.95, p[2] + right[2] * side]);
+      camera.position.set([p[0] + Math.sin(a) * d + right[0] * side, 1.5, p[2] + Math.cos(a) * d + right[2] * side]);
+      scene.environment.shadowCenter = [p[0], 1, p[2]]; scene.environment.shadowRadius = 6;
+      renderer.render(scene, camera, { background: 'sky' });
+    });
+  }
+</script>
+</body>
+</html>

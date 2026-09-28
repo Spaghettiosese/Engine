@@ -1,0 +1,21 @@
+// Checks the glTF exporter produces a structurally valid GLB, and JSON round-trips.
+import { cowboyDefinition } from '../src/content/cowboy.js';
+import { Character } from '../src/engine/character.js';
+import { exportGLB, exportOBJ } from '../src/engine/io.js';
+const ch = new Character(cowboyDefinition());
+ch.updateWorld(null);
+const glb = exportGLB(ch);
+const dv = new DataView(glb.buffer);
+const magic = dv.getUint32(0, true), len = dv.getUint32(8, true), jsonLen = dv.getUint32(12, true);
+const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLen)));
+const binLen = dv.getUint32(20 + jsonLen, true);
+let ok = magic === 0x46546c67 && len === glb.length && json.buffers[0].byteLength <= binLen;
+for (const v of json.bufferViews) ok &&= v.byteOffset + v.byteLength <= binLen && v.byteOffset % 4 === 0;
+for (const a of json.accessors) ok &&= a.bufferView < json.bufferViews.length;
+ok &&= json.skins[0].joints.length === ch.skeleton.length && json.animations.length === ch.mixer.clips.size;
+const rt = new Character(JSON.parse(JSON.stringify(ch.toJSON())));
+ok &&= rt.parts.length === ch.parts.length && rt.mixer.clips.size === ch.mixer.clips.size && rt.triangleCount === ch.triangleCount;
+const obj = exportOBJ(ch.parts.flatMap((p) => p.meshes));
+ok &&= obj.split('\nf ').length - 1 === ch.triangleCount;
+console.log(`${ok ? 'ok  ' : 'FAIL'} glb ${(glb.length / 1024).toFixed(0)} KB, ${json.meshes.length} meshes, ${json.nodes.length} nodes, ${json.animations.length} animations; JSON round-trip ${rt.parts.length} parts; OBJ ${ch.triangleCount} faces`);
+process.exit(ok ? 0 : 1);

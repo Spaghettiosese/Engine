@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cowboy Animation Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Rye&display=swap">
+<link rel="stylesheet" href="src/ui/viewer.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="view" aria-label="3D animation view"></canvas>
+  <header class="topbar">
+    <div class="brand"><span class="mark">SF</span><span>ShapeForge <em>Animation Viewer</em></span></div>
+    <nav class="nav"><a href="index.html">Home</a><a href="editor.html">Studio</a><a class="on" href="viewer.html">Viewer</a></nav>
+  </header>
+  <aside class="panel" id="panel">
+    <button class="panel-toggle" id="panelToggle" aria-expanded="true">Controls</button>
+    <div class="panel-body">
+      <section>
+        <h2>Model</h2>
+        <div class="row">
+          <select id="modelSelect" aria-label="Model"><option value="cowboy">The Cowboy</option></select>
+          <label class="btn ghost" for="fileInput">Load .json</label>
+          <input type="file" id="fileInput" accept=".json,application/json" hidden>
+        </div>
+        <p class="meta" id="modelMeta"></p>
+      </section>
+      <section>
+        <h2>Clips <small>click to crossfade · 1–9</small></h2>
+        <div id="clips" class="clips"></div>
+        <div class="slider"><label for="fade">Crossfade</label><input id="fade" type="range" min="0" max="1.5" step="0.05" value="0.4"><output id="fadeOut">0.40 s</output></div>
+        <div class="slider"><label for="speed">Playback</label><input id="speed" type="range" min="0.05" max="2" step="0.05" value="1"><output id="speedOut">1.00×</output></div>
+      </section>
+      <section>
+        <h2>Motion</h2>
+        <div class="seg" role="radiogroup" aria-label="Motion mode">
+          <button data-mode="inplace">In place</button><button data-mode="roam" class="on">Roam</button><button data-mode="play">Play (WASD)</button>
+        </div>
+        <p class="hint" id="modeHint">Root motion drives the cowboy around a loop; the camera follows.</p>
+      </section>
+      <section>
+        <h2>Display</h2>
+        <div class="toggles">
+          <label><input type="checkbox" id="tSkeleton"> Skeleton</label>
+          <label><input type="checkbox" id="tOnion"> Onion skin</label>
+          <label><input type="checkbox" id="tWire"> Wireframe</label>
+          <label><input type="checkbox" id="tToon"> Toon shading</label>
+          <label><input type="checkbox" id="tShadows" checked> Shadows</label>
+          <label><input type="checkbox" id="tSprings" checked> Spring bones</label>
+          <label><input type="checkbox" id="tDust" checked> Footstep dust</label>
+          <label><input type="checkbox" id="tSet" checked> Western set</label>
+          <label><input type="checkbox" id="tTurn"> Turntable</label>
+          <label><input type="checkbox" id="tBloom" checked> Bloom</label>
+        </div>
+        <div class="slider"><label for="sun">Sun angle</label><input id="sun" type="range" min="5" max="85" step="1" value="42"><output id="sunOut">42°</output></div>
+      </section>
+      <section>
+        <h2>Export</h2>
+        <div class="row">
+          <button class="btn" id="exportGLB">glTF (.glb)</button>
+          <button class="btn" id="exportJSON">Model JSON</button>
+          <button class="btn ghost" id="shot">Screenshot</button>
+        </div>
+        <p class="meta" id="exportMsg"></p>
+      </section>
+    </div>
+  </aside>
+  <div class="hud" id="hud"></div>
+  <div class="events" id="events" aria-live="polite"></div>
+  <footer class="timeline">
+    <button class="play" id="play" aria-label="Pause">❚❚</button>
+    <div class="clipname" id="clipName">Idle</div>
+    <div class="track" id="track"><div class="fill" id="fill"></div><div class="marks" id="marks"></div><div class="head" id="head"></div></div>
+    <div class="time" id="time">0.00 / 0.00 s</div>
+  </footer>
+  <div class="fatal" id="fatal" hidden></div>
+</div>
+<script type="module" src="src/viewer/viewer.js"></script>
+</body>
+</html>

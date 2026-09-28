@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ShapeForge Studio</title>
+<link rel="stylesheet" href="src/ui/editor.css">
+</head>
+<body>
+<div id="studio">
+  <header id="topbar">
+    <div class="logo" title="ShapeForge Studio">SF</div>
+    <nav id="menubar"></nav>
+    <div id="workspaces" role="tablist"></div>
+    <div class="spacer"></div>
+    <a class="toplink" href="viewer.html">Viewer ↗</a>
+    <a class="toplink" href="index.html">Home</a>
+  </header>
+  <main id="main">
+    <div id="toolbar" aria-label="Tools"></div>
+    <section id="viewport">
+      <div class="vp-header" id="vpHeader"></div>
+      <canvas id="canvas"></canvas>
+      <canvas id="overlay2d"></canvas>
+      <div id="vpInfo"></div>
+      <div id="vpOpText" hidden></div>
+      <div id="navGizmoWrap"><canvas id="navGizmo" width="160" height="160"></canvas>
+        <div class="nav-btns"><button id="navZoom" title="Zoom (drag)">🔍</button><button id="navPan" title="Pan (drag)">✋</button><button id="navPersp" title="Toggle perspective / orthographic (Numpad 5)">▦</button></div>
+      </div>
+    </section>
+    <div class="resizer v" id="sideResizer"></div>
+    <aside id="side">
+      <section id="outliner"><div class="area-header"><span class="area-title">Outliner</span><input id="outlinerFilter" placeholder="Filter" aria-label="Filter outliner"></div><div id="outlinerTree" tabindex="0"></div></section>
+      <div class="resizer h" id="outlinerResizer"></div>
+      <section id="properties"><div id="propTabs"></div><div id="propBody"></div></section>
+    </aside>
+  </main>
+  <div class="resizer h" id="timelineResizer"></div>
+  <section id="timeline">
+    <div class="area-header" id="tlHeader"></div>
+    <div id="tlBody"><div id="tlChannels"></div><canvas id="tlCanvas"></canvas></div>
+  </section>
+  <footer id="statusbar"><div id="statusLeft"></div><div id="statusRight"></div></footer>
+</div>
+<div id="menuLayer"></div>
+<div id="modalLayer" hidden></div>
+<div id="toast" hidden></div>
+<script type="module" src="src/editor/editor.js"></script>
+</body>
+</html>
