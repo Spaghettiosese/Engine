@@ -19,7 +19,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
     const c = await r.snapshot();
     c.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:0;pointer-events:none';
     document.body.appendChild(c);
-    document.querySelectorAll('.hud,.nav,.panel,.card').forEach((e) => { if (getComputedStyle(e).position === 'static') e.style.position = 'relative'; e.style.zIndex = 1; });
+    document.querySelectorAll('body > *:not(canvas)').forEach((e) => { if (e === c) return; if (getComputedStyle(e).position === 'static') e.style.position = 'relative'; e.style.zIndex = 1; });
     return 'webgpu ' + JSON.stringify(r.stats);
   });
   if (snap) logs.push('SNAPSHOT: ' + snap);

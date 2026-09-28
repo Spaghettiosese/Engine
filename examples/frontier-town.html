@@ -6,12 +6,21 @@
 <title>Frontier Town</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="examples.css">
+<style>
+  .prompt { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 15px; color: var(--ink); backdrop-filter: blur(10px); pointer-events: none; }
+  .prompt kbd { margin-right: 6px; }
+  .inv { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 6px; pointer-events: auto; }
+  .inv button { min-width: 64px; height: 56px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--ink-2); font: 12px/1.2 inherit; padding: 4px 8px; cursor: pointer; display: grid; place-items: center; backdrop-filter: blur(10px); }
+  .inv button b { display: block; font: 11px ui-monospace, monospace; color: var(--ink-3); }
+  .inv button[aria-pressed=true] { border-color: var(--brass); color: var(--ink); box-shadow: 0 0 0 1px var(--brass) inset; }
+  @media (max-width: 720px) { .inv { bottom: 64px; } .inv button { min-width: 48px; height: 44px; } }
+</style>
 </head>
 <body>
 <canvas class="stage" id="stage" aria-label="Frontier Town, playable third-person scene"></canvas>
 <div class="hud">
-  <div class="card title"><span class="mark">SF</span><div><h1>Frontier Town</h1><small>ShapeForge example · third person · V3 weather and light</small></div></div>
-  <div class="card keys hide-sm"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>C</kbd> crawl · drag to look · wheel to zoom<br><kbd>T</kbd> pause time · <kbd>[</kbd> <kbd>]</kbd> skip an hour<br><kbd>L</kbd> flashlight · <kbd>B</kbd> strike a match (the woodpile by the campfire burns)</div>
+  <div class="card title"><span class="mark">SF</span><div><h1>Frontier Town</h1><small>ShapeForge example · third person · V5 items, doors and inventory</small></div></div>
+  <div class="card keys hide-sm"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>C</kbd> crawl · drag to look · wheel to zoom<br><kbd>T</kbd> pause time · <kbd>[</kbd> <kbd>]</kbd> skip an hour<br><kbd>L</kbd> flashlight · <kbd>B</kbd> strike a match (the woodpile by the campfire burns)<br><kbd>E</kbd> pick up / open · <kbd>1</kbd>–<kbd>6</kbd> or <kbd>Q</kbd> switch item · <kbd>F</kbd> or click use · <kbd>R</kbd> reload · <kbd>G</kbd> drop</div>
   <div class="card" style="display:grid;gap:6px">
     <div class="row"><label for="tod">Time</label><input id="tod" type="range" min="0" max="24" step="0.05" value="17.6"><output id="todOut">17:36</output></div>
     <div class="row"><label for="rate">Day length</label><input id="rate" type="range" min="0" max="12" step="0.5" value="4"><output id="rateOut">4 min</output></div>
@@ -30,6 +39,8 @@
 </div>
 <div class="stats card" id="stats"></div>
 <div class="banner" id="banner" hidden></div>
+<div class="prompt" id="prompt" hidden></div>
+<div class="inv" id="inv" aria-label="Inventory"></div>
 <div class="flash" id="flash"></div>
 <nav class="nav"><a href="../index.html">Home</a><a href="lighting-lab.html">Lighting Lab</a><a href="architect.html">Architect</a></nav>
 <div class="fatal" id="fatal" hidden></div>

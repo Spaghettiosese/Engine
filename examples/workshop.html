@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Asset Workshop</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="examples.css">
+<style>
+  .hud { max-height: calc(100vh - 80px); overflow-y: auto; scrollbar-width: thin; }
+  .params { display: grid; gap: 6px; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .status { font-size: 12px; color: var(--ink-3); min-height: 1.2em; }
+  .ammo { display: flex; gap: 3px; margin-top: 6px; }
+  .ammo i { width: 7px; height: 16px; border-radius: 2px 2px 1px 1px; background: #c9a045; }
+  .ammo i.empty { background: rgba(255,255,255,.12); }
+</style>
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Asset preview"></canvas>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Asset Workshop</h1><small>ShapeForge V5 · design guns, tools and buildings</small></div></div>
+  <div class="card" style="display:grid;gap:8px">
+    <div class="seg" role="group" aria-label="Category" id="cats">
+      <button class="btn" data-cat="guns">Guns</button><button class="btn" data-cat="tools">Tools</button><button class="btn" data-cat="buildings">Buildings</button>
+    </div>
+    <div class="sel"><label for="kind">Model</label><select id="kind"></select></div>
+    <div class="params" id="params"></div>
+    <div class="actions"><button class="btn" id="random">Randomize</button><button class="btn" id="reset">Reset</button></div>
+  </div>
+  <div class="card" style="display:grid;gap:8px">
+    <div class="actions" id="acts"></div>
+    <div class="ammo" id="ammo" hidden></div>
+    <div class="toggles" id="viewToggles">
+      <label id="lHand"><input type="checkbox" id="tHand"> In the sheriff's hands</label>
+      <label><input type="checkbox" id="tNight"> Night</label>
+      <label><input type="checkbox" id="tSpin" checked> Turntable</label>
+    </div>
+    <div class="sel" id="holdRow"><label for="hold">Hold</label><select id="hold"></select></div>
+  </div>
+  <div class="card" style="display:grid;gap:6px">
+    <div class="actions"><button class="btn primary" id="export">Export .glb</button><button class="btn" id="copy">Copy link</button></div>
+    <div class="status" id="status" aria-live="polite"></div>
+  </div>
+</div>
+<div class="stats card" id="stats"></div>
+<nav class="nav"><a href="../index.html">Home</a><a href="stress.html">Stress Test</a><a href="frontier-town.html">Frontier Town</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="workshop.js"></script>
+</body>
+</html>

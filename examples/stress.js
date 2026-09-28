@@ -64,7 +64,7 @@ E.runLoop((dt) => {
     const r = 60 + 30 * Math.sin(t * 0.07);
     camera.position.set([Math.cos(t * 0.05) * r, 9 + 4 * Math.sin(t * 0.11), Math.sin(t * 0.05) * r]);
     camera.target.set([Math.cos(t * 0.05 + 0.6) * r * 0.6, 1.5, Math.sin(t * 0.05 + 0.6) * r * 0.6]);
-  } else controls.update(dt);
+  } else { controls.update(dt); controls.apply(); }
   env.shadowCenter = [camera.target[0], 0, camera.target[2]];
   renderer.render(scene, camera, { background: 'sky', shadows: $('tShadows').checked });
   fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05; hudT += dt;

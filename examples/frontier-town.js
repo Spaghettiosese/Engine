@@ -5,6 +5,8 @@ import * as E from '../src/engine/index.js';
 import { createCowboy } from '../src/content/cowboy.js';
 import { createGrinner } from '../src/content/monster.js';
 import { westernTown, collide } from '../src/content/town.js';
+import { makeGun } from '../src/content/armory.js';
+import { makeTool } from '../src/content/tools.js';
 
 const $ = (id) => document.getElementById(id);
 let renderer;
@@ -51,14 +53,84 @@ const camera = new E.Camera(); camera.fov = 50 * E.DEG; camera.far = 400;
 
 const state = { hours: +$('tod').value, rate: 4, paused: false, keys: new Set(), yaw: Math.PI, speed: 0, crawl: false, camYaw: 0, camPitch: 0.28, camDist: 6.5, grinner: { mode: 'hidden', yaw: 0, target: null, cool: 0 } };
 
+// ---------------------------------------------------------------- V5: items, doors and an inventory (ECS)
+const world = new E.World();
+const player = world.create({ actor: { character: cowboy, yaw: 0 }, inventory: { items: [], active: -1, capacity: 6 } });
+world.system(E.interactionSystem({ actor: player }));
+world.system(E.pickupSystem());
+for (const st of town.structures) E.addOpenings(world, st);
+// things lying around town: the sheriff's carbine, an axe by the woodpile, a lantern at the well...
+for (const [make, pos, name] of [
+  [() => makeTool('axe', { wood: 'hickory' }), [-1.8, 0.1, 25.6], 'Axe'],
+  [() => makeGun('lever', { barrel: 0.55 }), [5.6, 0.1, 6.8], 'Winchester'],
+  [() => makeTool('lantern'), [1.3, 0.1, -2.2], 'Lantern'],
+  [() => makeTool('shovel', { metal: 'rusty' }), [-1.4, 0.1, -2.6], 'Shovel'],
+  [() => makeGun('shotgun', { barrel: 0.62 }), [-5.4, 0.1, 13.5], 'Shotgun'],
+  [() => makeTool('torch'), [-4.2, 0.1, 23.2], 'Torch'],
+  [() => makeTool('pickaxe'), [-5.0, 0.1, -12], 'Pickaxe'],
+  [() => makeTool('hammer'), [4.8, 0.1, 18.5], 'Hammer'],
+]) E.spawnPickup(world, scene, make(), pos, { name });
+const actor = world.get(player, 'actor');
+actor.holdFor = (it) => ({});
+const inv = world.get(player, 'inventory');
+function drawInventory() {
+  $('inv').innerHTML = inv.items.map((s, i) => `<button data-i="${i}" aria-pressed="${i === inv.active}"><span><b>${i + 1}</b>${s.name}</span></button>`).join('');
+  $('inv').querySelectorAll('button').forEach((b) => (b.onclick = () => { E.select(world, player, +b.dataset.i); drawInventory(); }));
+}
+world.on('pickup', (e) => { banner(e.name); drawInventory(); });
+world.on('equip', drawInventory); world.on('drop', drawInventory);
+world.on('inventoryFull', () => banner('Hands full'));
+// using the held item: guns fire (and scare the Grinner off when they hit it), tools swing,
+// a torch lights whatever burns, the lantern turns up and down
+function muzzleFlash(gun) {
+  const p = gun.socketWorld('muzzle'); if (!p) return;
+  const d = E.vec3.normalize([0, 0, 0], E.vec3.transformDir([0, 0, 0], [0, 0, 1], gun.world));
+  particles.emit(p, { count: 14, color: [3, 2.2, 1.2, 0.9], colorEnd: [0.3, 0.3, 0.3, 0.1], size: 0.05, grow: 3, spread: 0.3, up: 0.2, life: 0.25, vel: d.map((v) => v * 2.5) });
+  particles.emit(p, { count: 8, color: [0.6, 0.58, 0.55, 0.35], colorEnd: [0.7, 0.7, 0.7, 0], size: 0.08, grow: 6, spread: 0.15, up: 0.25, life: 1.6, vel: d.map((v) => v * 0.8) });
+  state.muzzle = 0.06; gunLight.position.set(p);
+  // did it hit the Grinner? (a capsule round its body)
+  if (grinner.visible) {
+    const g = grinner.position, to = [g[0] - p[0], g[1] + 1.2 - p[1], g[2] - p[2]], t = E.vec3.dot(to, d);
+    const miss = E.vec3.len(E.vec3.sub([0, 0, 0], to, E.vec3.scale([0, 0, 0], d, t)));
+    if (t > 0 && t < 60 && miss < 0.7) { state.grinner.mode = 'wander'; state.grinner.cool = 12; state.grinner.target = [g[0] * 3, -80]; banner('It flinched and ran'); $('status').textContent = 'You hit it. It will be back.'; }
+  }
+}
+const gunLight = new E.Light('point', { color: '#ffc27a', intensity: 0, range: 8 }); scene.add(gunLight);
+async function useItem() {
+  const it = cowboy.equipped(), h = actor.handler;
+  if (!it || !h || h.busy) return;
+  if (it.kind === 'gun') {
+    h.setHold(it.twoHanded ? 'rifleAim' : 'pistolAim', 0.15); state.aimT = 1.2;
+    await new Promise((r) => setTimeout(r, 160));
+    if (await it.fire()) { muzzleFlash(it); h.play(it.twoHanded ? 'recoilRifle' : 'recoilPistol'); } else banner('Click. Reload with R', 1000);
+  } else if (it.toolKind === 'lantern') { it.setWick(it.state.wick > 0.5 ? 0.25 : 1); }
+  else if (it.toolKind === 'torch') {
+    h.play('raise'); setTimeout(() => { h.action = null; }, 900);
+    const n = fire.igniteAt(it.socketWorld('flame'), 1.4); if (n) banner('Fire!');
+  } else h.play(E.defaultAction(it), { onEvent: (ev) => { if (ev.point && ev.name === 'hit') { particles.emit([ev.point[0], Math.max(0.05, ev.point[1]), ev.point[2]], { count: 16, color: [0.55, 0.43, 0.32, 0.6], colorEnd: [0.6, 0.5, 0.4, 0], size: 0.08, grow: 4, spread: 0.8, up: 0.8, life: 1.2 }); } } });
+}
+async function reloadItem() {
+  const it = cowboy.equipped(), h = actor.handler;
+  if (!it || it.kind !== 'gun' || !h || h.busy) return;
+  banner('Reloading', 900);
+  await h.during(it.twoHanded ? 'reloadRifle' : 'reloadPistol', it.reload());
+  h.setHold(it.twoHanded ? 'rifleReady' : 'pistolReady');
+}
+
 // ---------------------------------------------------------------- input
 addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase(); state.keys.add(k);
+  if (k === 'e') E.interact(world, player);
+  if (k >= '1' && k <= '6') E.select(world, player, +k - 1);
+  if (k === 'q') E.cycle(world, player, 1);
+  if (k === 'g') E.drop(world, player, scene);
+  if (k === 'f') useItem();
+  if (k === 'r') reloadItem();
   if (k === 'c') state.crawl = !state.crawl;
   if (k === 't') state.paused = !state.paused;
   if (k === 'l') { if (flashlight.battery <= 0) flashlight.recharge(); banner(flashlight.toggle() ? 'Flashlight on' : 'Flashlight off'); }
   if (k === 'b') { // strike a match: set fire to anything flammable close in front of you
-    const f = [cowboy.position[0] + Math.sin(state.yaw) * 1.2, 0.4, cowboy.position[2] + Math.cos(state.yaw) * 1.2];
+    const yaw = cowboy.userData.loco?.yaw ?? 0, f = [cowboy.position[0] + Math.sin(yaw) * 1.2, 0.4, cowboy.position[2] + Math.cos(yaw) * 1.2];
     const n = fire.igniteAt(f, 1.6);
     banner(n ? 'Fire!' : 'Nothing here to burn');
   }
@@ -68,9 +140,9 @@ addEventListener('keyup', (e) => state.keys.delete(e.key.toLowerCase()));
 addEventListener('blur', () => state.keys.clear());
 const cv = $('stage');
 let drag = null;
-cv.addEventListener('pointerdown', (e) => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointerdown', (e) => { drag = [e.clientX, e.clientY]; state.click = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
 cv.addEventListener('pointermove', (e) => { if (!drag) return; state.camYaw -= (e.clientX - drag[0]) * 0.006; state.camPitch = E.clamp(state.camPitch + (e.clientY - drag[1]) * 0.004, -0.1, 1.2); drag = [e.clientX, e.clientY]; });
-cv.addEventListener('pointerup', () => (drag = null));
+cv.addEventListener('pointerup', (e) => { drag = null; if (state.click && Math.hypot(e.clientX - state.click[0], e.clientY - state.click[1]) < 5) useItem(); state.click = null; });
 cv.addEventListener('wheel', (e) => { e.preventDefault(); state.camDist = E.clamp(state.camDist * Math.exp(Math.sign(e.deltaY) * 0.1), 2.5, 18); }, { passive: false });
 $('tod').oninput = (e) => (state.hours = +e.target.value);
 $('rate').oninput = (e) => { state.rate = +e.target.value; $('rateOut').textContent = state.rate ? state.rate + ' min' : 'frozen'; };
@@ -188,8 +260,14 @@ function frame(now) {
   if (ix || iz) { const f = [-Math.sin(state.camYaw), -Math.cos(state.camYaw)], rt = [-f[1], f[0]]; dir = [f[0] * iz - rt[0] * ix, f[1] * iz - rt[1] * ix]; const l = Math.hypot(...dir); dir = [dir[0] / l, dir[1] / l]; }
   const want = !dir ? 0 : state.crawl ? 1 : k.has('shift') ? 2.9 : 1.15;
   const v = locomotion(cowboy, dt, dir, want, state.crawl, COWBOY_ROLES);
+  actor.yaw = cowboy.userData.loco?.yaw ?? 0;
+  // after firing, drop the gun back to the ready hold
+  if (state.aimT > 0 && (state.aimT -= dt) <= 0 && actor.handler && cowboy.equipped()?.kind === 'gun') actor.handler.setHold(cowboy.equipped().twoHanded ? 'rifleReady' : 'pistolReady', 0.4);
   cowboy.update(dt);
   cowboy.updateWorld(scene.world);
+  world.update(dt);
+  state.muzzle = (state.muzzle || 0) - dt; gunLight.intensity = state.muzzle > 0 ? 40 : 0;
+  { const f = world.focus; $('prompt').hidden = !f; if (f) $('prompt').innerHTML = `<kbd>E</kbd>${f.prompt}`; }
   flashlight.aim([camera.target[0] - (camera.position[0] - camera.target[0]) * 4, camera.target[1] - 0.3, camera.target[2] - (camera.position[2] - camera.target[2]) * 4]);
   flashlight.update(dt);
   updateGrinner(dt);
@@ -232,4 +310,4 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-window.__town = { scene, camera, renderer, state, cowboy, grinner, town, fire, flashlight, flammables };
+window.__town = { scene, camera, renderer, state, cowboy, grinner, town, fire, flashlight, flammables, world, player, useItem, reloadItem };

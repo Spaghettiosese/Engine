@@ -39,3 +39,7 @@ export function runLoop(update) {
   return () => { stopped = true; };
 }
 export * from './webgpu.js';
+export * from './mechanisms.js';
+export * from './handling.js';
+export * from './ecs.js';
+export * from './gameplay.js';

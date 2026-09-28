@@ -141,6 +141,121 @@ export function exportGLB(character, { fps = 30 } = {}) {
   return out;
 }
 
+// ------------------------------------------------------------------ props and structures
+// Record an animation by running it: `run` starts an action (e.g. () => gun.reload()) and
+// every node under root is sampled at `fps` until the action settles. Nodes that show or
+// hide (a round going into a chamber) are recorded as scale keys, since glTF has no
+// visibility channel. Returns { name, duration, tracks: Map(node -> {t, pos, rot, scale}) }.
+export async function recordAnimation(root, name, run, { fps = 30, maxTime = 12, update = (dt) => root.traverse((n) => n.isProp && n.update(dt)) } = {}) {
+  const nodes = []; root.traverse((n) => { if (n !== root && !n.isLight) nodes.push(n); });
+  const samples = nodes.map(() => ({ pos: [], rot: [], vis: [] })), times = [];
+  const take = (t) => { times.push(t); nodes.forEach((n, i) => { samples[i].pos.push(...n.position); samples[i].rot.push(...n.rotation); samples[i].vis.push(n.visible ? 1 : 0); }); };
+  let done = false;
+  Promise.resolve(run()).then(() => { done = true; });
+  let t = 0, settle = 0;
+  take(0);
+  while (t < maxTime) {
+    await 0;
+    update(1 / fps); t += 1 / fps; take(t);
+    const moving = [...(root.isProp ? root.rig.parts.values() : [])].some((p) => p.moving) || (root.isProp && root.rig.playing);
+    if (done && !moving && ++settle > 2) break;
+  }
+  const tracks = new Map();
+  const changed = (a, stride) => { for (let f = 1; f < a.length / stride; f++) for (let k = 0; k < stride; k++) if (Math.abs(a[f * stride + k] - a[k]) > 1e-5) return true; return false; };
+  nodes.forEach((n, i) => {
+    const s = samples[i], tr = {};
+    if (changed(s.pos, 3)) tr.pos = new Float32Array(s.pos);
+    if (changed(s.rot, 4)) { const r = new Float32Array(s.rot); for (let f = 1; f < times.length; f++) { let d = 0; for (let k = 0; k < 4; k++) d += r[f * 4 + k] * r[(f - 1) * 4 + k]; if (d < 0) for (let k = 0; k < 4; k++) r[f * 4 + k] = -r[f * 4 + k]; } tr.rot = r; }
+    if (changed(s.vis, 1)) tr.vis = new Float32Array(s.vis);
+    if (Object.keys(tr).length) tracks.set(n, tr);
+  });
+  return { name, duration: t, times: new Float32Array(times), tracks };
+}
+
+// Export any node tree (props, guns, tools, buildings) as binary glTF: the node hierarchy,
+// meshes, PBR materials (with KHR_materials_emissive_strength for glowing parts) and
+// recorded animations from recordAnimation().
+export function exportSceneGLB(root, { animations = [] } = {}) {
+  const chunks = [], views = [], accessors = [];
+  let byteLen = 0;
+  const addView = (arr, target) => {
+    const pad = (4 - (byteLen % 4)) % 4; if (pad) { chunks.push(new Uint8Array(pad)); byteLen += pad; }
+    const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+    chunks.push(bytes.slice());
+    views.push({ buffer: 0, byteOffset: byteLen, byteLength: bytes.byteLength, ...(target ? { target } : {}) });
+    byteLen += bytes.byteLength;
+    return views.length - 1;
+  };
+  const addAcc = (arr, type, componentType, target, minmax = false) => {
+    const size = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[type];
+    const acc = { bufferView: addView(arr, target), componentType, count: arr.length / size, type };
+    if (minmax) {
+      const mn = Array(size).fill(Infinity), mx = Array(size).fill(-Infinity);
+      for (let i = 0; i < arr.length; i++) { const k = i % size; mn[k] = Math.min(mn[k], arr[i]); mx[k] = Math.max(mx[k], arr[i]); }
+      acc.min = mn; acc.max = mx;
+    }
+    accessors.push(acc); return accessors.length - 1;
+  };
+  const FLOAT = 5126, UINT = 5125;
+  const nodes = [], meshes = [], materials = [], matIndex = new Map(), nodeIndex = new Map();
+  let emissiveExt = false;
+  const material = (m) => {
+    if (matIndex.has(m)) return matIndex.get(m);
+    const c = srgbToLinear(hexToRGB(m.color)), e = srgbToLinear(hexToRGB(m.emissive || '#000000'));
+    const k = m.emissiveStrength || 0, peak = Math.max(1e-6, ...e.map((v) => v * k));
+    const out = { name: m.name, pbrMetallicRoughness: { baseColorFactor: [...c, m.opacity ?? 1], metallicFactor: m.metallic, roughnessFactor: m.roughness }, doubleSided: !!m.doubleSided };
+    if (k > 0) {
+      const scale = Math.max(1, peak);
+      out.emissiveFactor = e.map((v) => (v * k) / scale);
+      if (scale > 1) { out.extensions = { KHR_materials_emissive_strength: { emissiveStrength: scale } }; emissiveExt = true; }
+    }
+    if ((m.opacity ?? 1) < 1) out.alphaMode = 'BLEND';
+    materials.push(out); matIndex.set(m, materials.length - 1);
+    return materials.length - 1;
+  };
+  const visit = (n) => {
+    if (n.isLight || n.instanceMatrices || n.skeleton) return -1;
+    const j = { name: n.name, translation: [...n.position], rotation: [...n.rotation], scale: n.visible ? [...n.scale] : [0, 0, 0] };
+    const idx = nodes.length; nodes.push(j); nodeIndex.set(n, idx);
+    if (n.geometry) {
+      const g = n.geometry;
+      meshes.push({ name: n.name, primitives: [{ attributes: { POSITION: addAcc(Float32Array.from(g.positions), 'VEC3', FLOAT, 34962, true), NORMAL: addAcc(Float32Array.from(g.normals), 'VEC3', FLOAT, 34962), TEXCOORD_0: addAcc(Float32Array.from(g.uvs), 'VEC2', FLOAT, 34962) }, indices: addAcc(Uint32Array.from(g.indices), 'SCALAR', UINT, 34963), material: material(n.material) }] });
+      j.mesh = meshes.length - 1;
+    }
+    const kids = n.children.map(visit).filter((i) => i >= 0);
+    if (kids.length) j.children = kids;
+    return idx;
+  };
+  const rootIdx = visit(root);
+  const anims = [];
+  for (const a of animations) {
+    const input = addAcc(a.times, 'SCALAR', FLOAT, undefined, true);
+    const samplers = [], channels = [];
+    for (const [n, tr] of a.tracks) {
+      const node = nodeIndex.get(n); if (node === undefined) continue;
+      if (tr.pos) { samplers.push({ input, output: addAcc(tr.pos, 'VEC3', FLOAT), interpolation: 'LINEAR' }); channels.push({ sampler: samplers.length - 1, target: { node, path: 'translation' } }); }
+      if (tr.rot) { samplers.push({ input, output: addAcc(tr.rot, 'VEC4', FLOAT), interpolation: 'LINEAR' }); channels.push({ sampler: samplers.length - 1, target: { node, path: 'rotation' } }); }
+      if (tr.vis) { const sc = new Float32Array(tr.vis.length * 3); tr.vis.forEach((v, f) => sc.set([v * n.scale[0], v * n.scale[1], v * n.scale[2]], f * 3)); samplers.push({ input, output: addAcc(sc, 'VEC3', FLOAT), interpolation: 'STEP' }); channels.push({ sampler: samplers.length - 1, target: { node, path: 'scale' } }); }
+    }
+    if (channels.length) anims.push({ name: a.name, samplers, channels });
+  }
+  const json = { asset: { version: '2.0', generator: 'ShapeForge Engine' }, scene: 0, scenes: [{ nodes: [rootIdx] }], nodes, meshes, materials, accessors, bufferViews: views, buffers: [{ byteLength: byteLen }] };
+  if (anims.length) json.animations = anims;
+  if (emissiveExt) json.extensionsUsed = ['KHR_materials_emissive_strength'];
+  const enc = new TextEncoder();
+  let jsonBytes = enc.encode(JSON.stringify(json));
+  const jpad = (4 - (jsonBytes.length % 4)) % 4;
+  if (jpad) { const t = new Uint8Array(jsonBytes.length + jpad); t.set(jsonBytes); t.fill(0x20, jsonBytes.length); jsonBytes = t; }
+  const bpad = (4 - (byteLen % 4)) % 4, binLen = byteLen + bpad, total = 12 + 8 + jsonBytes.length + 8 + binLen;
+  const out = new Uint8Array(total), dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
+  dv.setUint32(12, jsonBytes.length, true); dv.setUint32(16, 0x4e4f534a, true); out.set(jsonBytes, 20);
+  let o = 20 + jsonBytes.length;
+  dv.setUint32(o, binLen, true); dv.setUint32(o + 4, 0x004e4942, true); o += 8;
+  for (const c of chunks) { out.set(c, o); o += c.byteLength; }
+  return out;
+}
+
 // Trigger a browser download (may be blocked inside sandboxed frames; callers should offer a copy fallback)
 export function download(name, data, type = 'application/octet-stream') {
   try {

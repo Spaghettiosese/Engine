@@ -7,6 +7,7 @@ import { Node, Mesh, Material, Light, InstancedMesh } from './scene.js';
 import { Geometry, box, cylinder, cone, sphere, torus, tube, extrude, capsule, lathe } from './geometry.js';
 import { buildShape } from './modifiers.js';
 import { mat4, quat, vec3, rng } from './math.js';
+import { Rig } from './mechanisms.js';
 
 // ------------------------------------------------------------------ materials
 export function archPalette(o = {}) {
@@ -45,7 +46,7 @@ export function setNightLights(palette, amount) {
 
 // ------------------------------------------------------------------ Kit
 export class Kit {
-  constructor(palette) { this.p = palette; this.groups = new Map(); this.lights = []; this.colliders = []; this.dynamic = []; }
+  constructor(palette, { openable = false } = {}) { this.p = palette; this.groups = new Map(); this.lights = []; this.colliders = []; this.dynamic = []; this.leaves = []; this.openable = openable; }
   add(mat, geo, pos = [0, 0, 0], rot = [0, 0, 0], scale = [1, 1, 1]) {
     const m = mat4.fromRTS(mat4.create(), quat.fromEuler(quat.create(), rot[0], rot[1], rot[2]), pos, scale);
     if (!this.groups.has(mat)) this.groups.set(mat, []);
@@ -67,8 +68,51 @@ export class Kit {
     for (const l of this.lights) n.add(l);
     for (const d of this.dynamic) n.add(d);
     n.userData.colliders = this.colliders;
+    if (this.leaves.length) {
+      // doors, shutters and gates become parts of one rig on the structure
+      const rig = new Rig(), counts = {};
+      n.userData.rig = rig;
+      n.userData.openings = this.leaves.map((L) => {
+        n.add(L.node);
+        const name = L.kind + (counts[L.kind] = (counts[L.kind] || 0) + 1);
+        const part = rig.add(name, L.node, { axis: [0, 1, 0], min: L.min, max: L.max, stiffness: L.stiffness, damping: L.damping, value: L.value });
+        const open = { name, kind: L.kind, part, node: L.node, openAngle: L.open, swing: !!L.swing, center: L.center || [0.45, 1, 0],
+          get isOpen() { return Math.abs(part.target) > 5; },
+          open() { if (L.swing) this.push(Math.sign(L.open)); else part.set(L.open); }, close() { part.set(0); }, toggle() { if (L.swing) this.push(Math.sign(L.open)); else part.set(Math.abs(part.target) > 5 ? 0 : L.open); },
+          push(dir = 1) { part.vel += dir * 260; part.driven = false; } };
+        return open;
+      });
+    }
     return n;
   }
+}
+
+// A hinged leaf (door, shutter, gate) as its own node, pivoting about local Y at the hinge.
+// Built in wall space: hinge at (x, y, z) along the wall, the leaf extending `side` (+1/-1) along X.
+function hingedLeaf(kit, { origin = [0, 0, 0], rotY = 0, hinge, w, h, t = 0.04, side = 1, mat, kind = 'door', min = 0, max = 100, open = 95, value = 0, handle = true, stiffness = 60, damping = 14, swing = false, panels = true }) {
+  const q = quat.fromEuler(quat.create(), 0, rotY, 0);
+  const wp = vec3.transformQuat([0, 0, 0], hinge, q);
+  const pivot = new Node(kind[0].toUpperCase() + kind.slice(1));
+  pivot.position.set([origin[0] + wp[0], origin[1] + wp[1], origin[2] + wp[2]]);
+  quat.copy(pivot.rotation, q);
+  pivot.userData.dynamic = true;
+  // identical leaves (every door of the same size and paint) share geometry, so the
+  // renderer's automatic instancing draws them together
+  const cache = (kit.p.__leaves ||= new Map()), key = [kind, w.toFixed(3), h.toFixed(3), t, side, mat.name, handle, panels].join('|');
+  let parts = cache.get(key);
+  if (!parts) {
+    const k = new Kit(kit.p);
+    k.box(mat, [side * w / 2, h / 2, 0], [w, h, t], [0, 0, 0], 0.01);
+    if (panels) for (const fy of [0.28, 0.72]) k.box(mat, [side * w / 2, h * fy, t / 2 + 0.006], [w * 0.7, h * 0.3, 0.012], [0, 0, 0], 0.01);
+    if (handle) { k.box(kit.p.metal, [side * (w - 0.1), Math.min(1.05, h * 0.5), t / 2 + 0.03], [0.04, 0.08, 0.05]); k.box(kit.p.metal, [side * (w - 0.1), Math.min(1.05, h * 0.5), -t / 2 - 0.03], [0.04, 0.08, 0.05]); }
+    for (const fy of [0.15, 0.85]) k.box(kit.p.metal, [side * 0.06, h * fy, t / 2 + 0.004], [0.12, 0.04, 0.01]); // hinge straps
+    parts = [...k.groups].map(([m, geos]) => ({ m, g: Geometry.merge(geos) }));
+    cache.set(key, parts);
+  }
+  for (const { m, g } of parts) pivot.add(new Mesh(g, m, pivot.name + ' · ' + m.name));
+  kit.leaves.push({ node: pivot, kind, min, max, open, value, stiffness, damping, swing, center: [side * w / 2, h / 2, 0] });
+  if (value) { /* initial pose is applied by the rig part */ }
+  return pivot;
 }
 
 // ------------------------------------------------------------------ 3D lettering (5x7 pixel font)
@@ -137,18 +181,30 @@ export function wall(kit, { x0, x1, y0, y1, z, t = 0.14, mat, openings = [], tri
     if (o.kind === 'window') {
       put(kit.p.glass, [l, b, z - 0.01], [r, top, z + 0.01]);
       put(trim, [l, b + o.h / 2 - 0.02, z], [r, b + o.h / 2 + 0.02, z + 0.035]); // meeting rail
-      if (o.shutters) {
+      if (o.shutters && kit.openable) {
+        // shutters fold out flat against the wall (open) or swing shut over the glass
+        const sw = o.w / 2 + 0.1;
+        hingedLeaf(kit, { origin, rotY, hinge: [l - 0.1, b, zf + 0.02], w: sw, h: o.h, t: 0.035, side: 1, mat: kit.p.paintRed, kind: 'shutter', min: -178, max: 0, open: -178, value: -178, handle: false, stiffness: 50, damping: 12, panels: false });
+        hingedLeaf(kit, { origin, rotY, hinge: [r + 0.1, b, zf + 0.02], w: sw, h: o.h, t: 0.035, side: -1, mat: kit.p.paintRed, kind: 'shutter', min: 0, max: 178, open: 178, value: 178, handle: false, stiffness: 50, damping: 12, panels: false });
+      } else if (o.shutters) {
         put(kit.p.paintRed, [l - o.w / 2 - 0.1, b, zf], [l - 0.1, top, zf + 0.04]);
         put(kit.p.paintRed, [r + 0.1, b, zf], [r + o.w / 2 + 0.1, top, zf + 0.04]);
       }
+    } else if (o.kind === 'door' && kit.openable) {
+      hingedLeaf(kit, { origin, rotY, hinge: [l + 0.01, b, z - 0.01], w: o.w - 0.02, h: o.h - 0.01, side: 1, mat: kit.p.door, kind: 'door', min: 0, max: 100, open: 95 });
     } else if (o.kind === 'door') {
       put(kit.p.door, [l, b, z - 0.03], [r, top, z + 0.01]);
       put(kit.p.metal, [r - 0.14, b + 1.0, z], [r - 0.1, b + 1.08, z + 0.05]); // handle
     } else if (o.kind === 'batwing') {
       // saloon doors: two short swinging leaves, dark room behind
-      put(kit.p.door, [l, b, z - t / 2 - 0.4], [r, top, z - t / 2 - 0.38]);
-      put(kit.p.paintCream, [l + 0.02, b + 0.45, z + 0.02], [o.x - 0.02, b + 1.55, z + 0.05]);
-      put(kit.p.paintCream, [o.x + 0.02, b + 0.45, z + 0.02], [r - 0.02, b + 1.55, z + 0.05]);
+      if (!kit.openable) put(kit.p.door, [l, b, z - t / 2 - 0.4], [r, top, z - t / 2 - 0.38]);
+      if (kit.openable) {
+        // they swing both ways and spring back shut
+        for (const [hx, side] of [[l + 0.02, 1], [r - 0.02, -1]]) hingedLeaf(kit, { origin, rotY, hinge: [hx, b + 0.45, z + 0.035], w: o.w / 2 - 0.04, h: 1.1, t: 0.03, side, mat: kit.p.paintCream, kind: 'batwing', min: -110, max: 110, open: side * 80, stiffness: 22, damping: 2.2, handle: false, swing: true });
+      } else {
+        put(kit.p.paintCream, [l + 0.02, b + 0.45, z + 0.02], [o.x - 0.02, b + 1.55, z + 0.05]);
+        put(kit.p.paintCream, [o.x + 0.02, b + 0.45, z + 0.02], [r - 0.02, b + 1.55, z + 0.05]);
+      }
     }
   }
   put(mat, [cx, y0, z - t / 2], [x1, y1, z + t / 2]);
@@ -201,11 +257,16 @@ function falseFront(kit, { w, y, extra = 1.6, mat, trim, style = 'stepped' }) {
 export const BUILDING_DEFAULTS = {
   width: 8, depth: 10, floors: 2, floorHeight: 3.2, siding: 'siding', roof: 'falseFront', facade: 'stepped',
   porch: true, porchDepth: 2.4, balcony: true, windows: 3, door: 'door', sign: '', shutters: false, chimney: false, lanterns: true, seed: 1,
+  // V5: doors and shutters on hinges, furnished interiors ('saloon', 'store', 'sheriff', 'house', 'hotel')
+  openable: false, interior: false, use: 'house',
 };
+export const BUILDING_USES = ['house', 'saloon', 'store', 'sheriff', 'hotel'];
+export const ROOF_STYLES = ['falseFront', 'gable', 'hip', 'flat'];
 
 export function building(kit0, o = {}) {
   const p = { ...BUILDING_DEFAULTS, ...o };
   const kit = kit0 || new Kit(archPalette());
+  if (p.openable) kit.openable = true;
   const P = kit.p, r = rng(p.seed);
   const W = p.width, D = p.depth, H = p.floorHeight, F = p.floors, top = F * H;
   const wallMat = P[p.siding] || P.siding;
@@ -233,7 +294,14 @@ export function building(kit0, o = {}) {
     for (const s of [1, -1]) wall(kit, { x0: -D / 2 + 0.07, x1: D / 2 - 0.07, y0, y1, z: 0, mat: wallMat, openings: sideOps, rotY: s * 90, origin: [s * W / 2, 0, -D / 2] });
     // floor band + interior floor
     kit.span(P.trim, [-W / 2 - 0.05, y1 - 0.08, -D - 0.05], [W / 2 + 0.05, y1, 0.09]);
-    if (f > 0) kit.span(P.deck, [-W / 2 + 0.1, y0 - 0.1, -D + 0.1], [W / 2 - 0.1, y0, -0.1]);
+    if (f > 0) {
+      if (p.interior && D >= 6) { // leave a stairwell along the right wall
+        const sw = stairwell(p, D, H);
+        kit.span(P.deck, [-W / 2 + 0.1, y0 - 0.1, -D + 0.1], [W / 2 - 1.45, y0, -0.1]);
+        kit.span(P.deck, [W / 2 - 1.45, y0 - 0.1, -D + 0.1], [W / 2 - 0.1, y0, sw.end]);
+        kit.span(P.deck, [W / 2 - 1.45, y0 - 0.1, sw.start], [W / 2 - 0.1, y0, -0.1]);
+      } else kit.span(P.deck, [-W / 2 + 0.1, y0 - 0.1, -D + 0.1], [W / 2 - 0.1, y0, -0.1]);
+    }
   }
   kit.span(P.deck, [-W / 2 + 0.1, 0.3, -D + 0.1], [W / 2 - 0.1, 0.36, -0.1]);
   // corner boards
@@ -283,10 +351,130 @@ export function building(kit0, o = {}) {
     kit.box(P.trim, [0, sy, sz - 0.01], [sw + 0.12, 0.82, 0.06]);
     lettering(kit, p.sign, [0, sy, sz + 0.06], Math.min(0.42, (sw - 0.4) / (p.sign.length * 1.2)));
   }
+  if (p.interior) furnish(kit, p);
   // an interior lamp so windows glow at night
   kit.light([0, 0.35 + 1.8, -D / 2], { color: '#ffb266', intensity: 0, range: Math.max(W, D) * 0.9, flicker: 0.15 }).userData.interior = true;
   kit.colliders.push({ min: [-W / 2 - 0.1, -D - 0.1], max: [W / 2 + 0.1, 0.1] });
   return kit;
+}
+
+// ------------------------------------------------------------------ interiors
+function stairwell(p, D, H) { const steps = Math.ceil(H / 0.2), run = Math.min(0.27, (D - 2.2) / steps); return { steps, run, rise: H / steps, start: -1.0, end: -1.0 - steps * run }; }
+export function table(kit, pos, { round = false, w = 1.1, d = 0.75, h = 0.76 } = {}) {
+  const P = kit.p;
+  if (round) { kit.cyl(P.darkWood, [pos[0], pos[1] + h - 0.02, pos[2]], w / 2, 0.04, [0, 0, 0], 20); kit.cyl(P.darkWood, [pos[0], pos[1] + h / 2, pos[2]], 0.05, h, [0, 0, 0], 8); kit.cyl(P.darkWood, [pos[0], pos[1] + 0.03, pos[2]], 0.28, 0.05, [0, 0, 0], 12); return; }
+  kit.box(P.darkWood, [pos[0], pos[1] + h - 0.02, pos[2]], [w, 0.04, d], [0, 0, 0], 0.01);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) kit.box(P.darkWood, [pos[0] + sx * (w / 2 - 0.06), pos[1] + h / 2, pos[2] + sz * (d / 2 - 0.06)], [0.05, h, 0.05]);
+}
+export function chair(kit, pos, rotY = 0) {
+  const P = kit.p, q = quat.fromEuler(quat.create(), 0, rotY, 0);
+  const at = (x, y, z) => { const w = vec3.transformQuat([0, 0, 0], [x, y, z], q); return [pos[0] + w[0], pos[1] + w[1], pos[2] + w[2]]; };
+  kit.box(P.deck, at(0, 0.45, 0), [0.42, 0.04, 0.42], [0, rotY, 0], 0.01);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) kit.box(P.darkWood, at(sx * 0.18, sz < 0 ? 0.46 : 0.22, sz * 0.18), [0.035, sz < 0 ? 0.92 : 0.45, 0.035], [0, rotY, 0]);
+  for (const y of [0.7, 0.86]) kit.box(P.darkWood, at(0, y, -0.18), [0.4, 0.05, 0.02], [0, rotY, 0]);
+}
+export function bed(kit, pos, rotY = 0) {
+  const P = kit.p, q = quat.fromEuler(quat.create(), 0, rotY, 0);
+  const at = (x, y, z) => { const w = vec3.transformQuat([0, 0, 0], [x, y, z], q); return [pos[0] + w[0], pos[1] + w[1], pos[2] + w[2]]; };
+  kit.box(P.darkWood, at(0, 0.3, 0), [1.0, 0.12, 2.0], [0, rotY, 0], 0.01);
+  kit.box(P.canvas, at(0, 0.43, 0.05), [0.94, 0.16, 1.85], [0, rotY, 0], 0.05);
+  kit.box(P.paintCream, at(0, 0.54, -0.78), [0.6, 0.1, 0.3], [0, rotY, 0], 0.04);
+  kit.box(P.paintRed, at(0, 0.53, 0.35), [0.98, 0.04, 1.2], [0, rotY, 0], 0.02);
+  for (const z of [-1, 1]) kit.box(P.darkWood, at(0, z < 0 ? 0.55 : 0.4, z), [1.05, z < 0 ? 1.1 : 0.8, 0.06], [0, rotY, 0], 0.01);
+}
+export function shelf(kit, pos, rotY = 0, { w = 2, h = 2, items = 'goods', seed = 3 } = {}) {
+  const P = kit.p, q = quat.fromEuler(quat.create(), 0, rotY, 0), r = rng(seed);
+  const at = (x, y, z) => { const v = vec3.transformQuat([0, 0, 0], [x, y, z], q); return [pos[0] + v[0], pos[1] + v[1], pos[2] + v[2]]; };
+  kit.box(P.darkWood, at(0, h / 2, -0.17), [w, h, 0.03], [0, rotY, 0]);
+  for (const sx of [-1, 1]) kit.box(P.darkWood, at(sx * w / 2, h / 2, 0), [0.04, h, 0.36], [0, rotY, 0]);
+  for (let y = 0.05; y < h; y += 0.45) {
+    kit.box(P.deck, at(0, y, 0), [w, 0.03, 0.36], [0, rotY, 0]);
+    if (y > h - 0.3) continue;
+    for (let x = -w / 2 + 0.12; x < w / 2 - 0.1; x += 0.1 + r() * 0.12) {
+      if (r() < 0.2) continue;
+      const hh = 0.12 + r() * 0.16;
+      if (items === 'bottles') { kit.cyl(r() < 0.5 ? P.glass : P.water, at(x, y + hh / 2 + 0.015, 0.02), 0.03, hh, [0, 0, 0], 8); kit.cyl(P.glass, at(x, y + hh + 0.04, 0.02), 0.01, 0.06, [0, 0, 0], 6); }
+      else if (r() < 0.5) kit.box(r() < 0.5 ? P.paintCream : P.canvas, at(x, y + hh / 2 + 0.015, 0), [0.09, hh, 0.14], [0, rotY + r() * 20 - 10, 0], 0.01);
+      else kit.cyl(r() < 0.5 ? P.tin : P.metal, at(x, y + 0.06, 0.02), 0.04, 0.11, [0, 0, 0], 10);
+    }
+  }
+}
+export function stove(kit, pos, ceiling = 3) {
+  const P = kit.p;
+  kit.box(P.metal, [pos[0], pos[1] + 0.35, pos[2]], [0.7, 0.7, 0.55], [0, 0, 0], 0.03);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) kit.box(P.metal, [pos[0] + sx * 0.3, pos[1] + 0.05, pos[2] + sz * 0.22], [0.06, 0.1, 0.06]);
+  kit.cyl(P.metal, [pos[0] + 0.15, pos[1] + ceiling / 2 + 0.35, pos[2] - 0.1], 0.07, ceiling - 0.7, [0, 0, 0], 12);
+}
+export function counter(kit, from, to, h = 1.05) {
+  const P = kit.p;
+  kit.span(P.darkWood, [from[0], 0.36, from[1]], [to[0], 0.36 + h - 0.05, to[1]], 0.02);
+  kit.span(P.trim, [from[0] - 0.05, 0.36 + h - 0.05, from[1] - 0.05], [to[0] + 0.05, 0.36 + h, to[1] + 0.05], 0.01);
+  kit.span(P.brass || P.metal, [from[0] - 0.02, 0.5, Math.max(from[1], to[1]) + 0.08], [to[0] + 0.02, 0.53, Math.max(from[1], to[1]) + 0.1]); // foot rail
+}
+function piano(kit, pos, rotY = 0) {
+  const P = kit.p, q = quat.fromEuler(quat.create(), 0, rotY, 0);
+  const at = (x, y, z) => { const w = vec3.transformQuat([0, 0, 0], [x, y, z], q); return [pos[0] + w[0], pos[1] + w[1], pos[2] + w[2]]; };
+  kit.box(P.door, at(0, 0.65, 0), [1.5, 1.3, 0.6], [0, rotY, 0], 0.02);
+  kit.box(P.paintCream, at(0, 0.75, 0.33), [1.3, 0.03, 0.12], [0, rotY, 0]);
+  for (let i = 0; i < 18; i++) kit.box(P.metal, at(-0.6 + i * 0.072, 0.77, 0.3), [0.02, 0.02, 0.07], [0, rotY, 0]);
+  chair(kit, at(0, 0, 0.9), rotY + 180);
+}
+function cell(kit, x0, x1, z0, z1) {
+  const P = kit.p, y = 0.36, h = 2.4;
+  for (let x = x0; x <= x1 + 1e-6; x += 0.14) kit.cyl(P.metal, [x, y + h / 2, z0], 0.012, h, [0, 0, 0], 6);
+  for (let z = z0; z >= z1 - 1e-6; z -= 0.14) kit.cyl(P.metal, [x1, y + h / 2, z], 0.012, h, [0, 0, 0], 6);
+  for (const yy of [0.1, h - 0.05]) { kit.span(P.metal, [x0, y + yy - 0.03, z0 - 0.03], [x1, y + yy + 0.03, z0 + 0.03]); kit.span(P.metal, [x1 - 0.03, y + yy - 0.03, z1], [x1 + 0.03, y + yy + 0.03, z0]); }
+  bed(kit, [x0 + 0.6, y, z1 + 1.1], 0);
+}
+function furnish(kit, p) {
+  const P = kit.p, W = p.width, D = p.depth, H = p.floorHeight, y = 0.36, r = rng(p.seed + 17);
+  // stairs up the right wall to every upper floor
+  if (p.floors > 1 && D >= 6) { const sw = stairwell(p, D, H); stairs(kit, { from: [W / 2 - 0.78, y, sw.start], steps: sw.steps, rise: sw.rise, run: sw.run, width: 1.1, rails: true }); }
+  const inner = { x0: -W / 2 + 0.5, x1: W / 2 - (p.floors > 1 ? 1.8 : 0.5), z0: -1.5, z1: -D + 0.5 };
+  const use = p.use;
+  if (use === 'saloon') {
+    counter(kit, [inner.x0, inner.z1 + 1.2], [inner.x0 + 0.6, -2.2]);
+    shelf(kit, [inner.x0 - 0.2, y, (inner.z1 - 2.2) / 2 + 0.6], 90, { w: Math.min(3.2, D - 4), h: 2.1, items: 'bottles', seed: p.seed });
+    for (let i = 0; i < 3; i++) {
+      const tx = inner.x0 + 2.2 + i * ((inner.x1 - inner.x0 - 2.6) / 2.6), tz = -2.6 - (i % 2) * 2.2;
+      if (tx > inner.x1 - 0.5) break;
+      table(kit, [tx, y, tz], { round: true, w: 0.9 });
+      for (let c = 0; c < 4; c++) { const a = c * 90 + 45 + r() * 20; chair(kit, [tx + Math.sin(a * Math.PI / 180) * 0.7, y, tz + Math.cos(a * Math.PI / 180) * 0.7], a + 180); }
+    }
+    piano(kit, [Math.min(inner.x1 - 0.8, 0.5), y, inner.z1 + 0.35], 0);
+  } else if (use === 'store') {
+    counter(kit, [inner.x0 + 0.4, -3.2], [inner.x1 - 0.4, -2.6]);
+    shelf(kit, [0, y, inner.z1 + 0.05], 0, { w: Math.min(W - 1.4, 4.5), h: 2.3, seed: p.seed });
+    shelf(kit, [inner.x0 - 0.2, y, -D / 2 - 0.5], 90, { w: Math.min(D - 5, 3), h: 2.3, seed: p.seed + 1 });
+    for (let i = 0; i < 3; i++) barrel(kit, [inner.x1 - 0.4 - i * 0.7, y, -1.4], 0.9);
+    crate(kit, [inner.x0 + 0.5, y, -1.6], 0.6, 12);
+  } else if (use === 'sheriff') {
+    table(kit, [inner.x0 + 1.2, y, -2.8], { w: 1.5, d: 0.8 });
+    chair(kit, [inner.x0 + 1.2, y, -3.5], 0);
+    chair(kit, [inner.x0 + 1.2, y, -2.1], 180);
+    shelf(kit, [inner.x0 - 0.2, y, -2.5], 90, { w: 1.6, h: 1.8, seed: p.seed });
+    const cx1 = Math.min(inner.x1, inner.x0 + 3.2), cz0 = Math.max(inner.z1 + 2.4, -D + 2.6);
+    cell(kit, inner.x0 - 0.3, cx1, cz0, -D + 0.12);
+    // the cell door is a hinged gate of bars
+    if (kit.openable) {
+      const gate = new Kit(P); for (let x = 0.07; x < 0.9; x += 0.14) gate.cyl(P.metal, [x, 1.2, 0], 0.012, 2.4, [0, 0, 0], 6);
+      for (const yy of [0.1, 2.35]) gate.box(P.metal, [0.45, yy, 0], [0.9, 0.06, 0.03]);
+      const pivot = new Node('Cell door'); pivot.position.set([cx1 - 1.0, 0.36, cz0]); pivot.userData.dynamic = true; pivot.add(gate.toNode('Cell door bars'));
+      kit.leaves.push({ node: pivot, kind: 'cell', min: -100, max: 0, open: -95, value: 0, stiffness: 40, damping: 12, center: [0.45, 1.2, 0] });
+    }
+  } else if (use === 'hotel' || use === 'house') {
+    table(kit, [inner.x0 + 1.0, y, -2.5]);
+    for (const s of [-1, 1]) chair(kit, [inner.x0 + 1.0 + s * 0.4, y, -2.5 + s * 0.6], s > 0 ? 180 : 0);
+    stove(kit, [inner.x0 + 0.1, y, inner.z1 + 0.5], H);
+    if (use === 'house' || p.floors === 1) bed(kit, [Math.min(inner.x1 - 0.6, 1.5), y, inner.z1 + 1.1], 0);
+    shelf(kit, [inner.x0 - 0.2, y, -D / 2 - 1], 90, { w: 1.2, h: 1.6, seed: p.seed });
+  }
+  // upper floors: bedrooms
+  for (let f = 1; f < p.floors; f++) {
+    const fy = 0.36 + f * H;
+    const n = Math.max(1, Math.floor((W - 2) / 2.2));
+    for (let i = 0; i < n; i++) { const bx = -W / 2 + 1.0 + i * 2.2; if (bx > inner.x1 - 0.5) break; bed(kit, [bx, fy, -D + 1.2], 0); chair(kit, [bx + 0.9, fy, -D + 2.4], 200); }
+  }
 }
 
 // ------------------------------------------------------------------ structures and props

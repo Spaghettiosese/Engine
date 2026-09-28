@@ -1,6 +1,7 @@
 // Character: a rigged, multi-part model built entirely from parametric shapes.
 // Parts are skinned to a shared skeleton (rigidly or with automatic weights) and
 // animated by a Mixer. The whole thing round-trips to plain JSON.
+import { PropHandler } from './handling.js';
 import { Node, Mesh, Material } from './scene.js';
 import { Skeleton, computeSkinWeights } from './skeleton.js';
 import { Mixer, Clip } from './animation.js';
@@ -118,8 +119,27 @@ export class Character extends Node {
     this.updateWorld(this.parent ? this.parent.world : null);
     if (this.autoAnimate) this.mixer.update(dt);
     if (this.springs) this.skeleton.simulateSprings(dt, this.world);
+    if (this.handlers) for (const h of Object.values(this.handlers)) h.update(dt);
     this.updateSockets();
+    if (this.handlers) for (const h of Object.values(this.handlers)) if (h.prop.update) h.prop.update(dt);
   }
+  // V5: hold a prop (gun, tool, lantern) in a hand. The prop's grip picks the hand pose and
+  // socket; hold styles ('rifleAim', 'toolReady', 'carry'...) and actions ('chop', 'dig')
+  // come from handling.js. Returns the PropHandler (setHold, play).
+  equip(prop, opts = {}) {
+    const side = opts.side || 'R';
+    this.unequip(side);
+    this.handlers ||= {};
+    return (this.handlers[side] = new PropHandler(this, prop, { ...opts, side }));
+  }
+  unequip(side = 'R') {
+    const h = this.handlers?.[side];
+    if (!h) return null;
+    delete this.handlers[side];
+    this.detach(h.prop);
+    return h.prop;
+  }
+  equipped(side = 'R') { return this.handlers?.[side]?.prop || null; }
   // Sockets: attach props (a revolver, a hat, a torch) to a bone. The node becomes a child
   // of the character and follows the bone with a fixed offset. Re-attaching moves it, e.g.
   // from the holster to the hand. Call updateSockets() again after IK changes the pose.

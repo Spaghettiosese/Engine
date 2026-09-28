@@ -48,7 +48,7 @@ export function westernTown({ seed = 7 } = {}) {
   const r = rng(seed);
   const root = new Node('Frontier Town');
   const palette = A.archPalette();
-  const colliders = [], rotors = [], interior = [], lamps = [];
+  const colliders = [], rotors = [], interior = [], lamps = [], structures = [];
   // ground: desert plus a packed-dirt main street with wheel ruts
   const ground = new Mesh(buildShape({ type: 'plane', width: 400, depth: 400, subdivisions: 1 }), new Material({ name: 'Desert', color: '#c9a077', roughness: 0.95, pattern: 'dirt', patternScale: 1, patternColor: '#a57a52', bump: 1.2 }), 'Ground');
   ground.castShadow = false; root.add(ground);
@@ -59,6 +59,7 @@ export function westernTown({ seed = 7 } = {}) {
     const n = kit.toNode(name); n.position.set(pos); n.setEuler(0, rotY, 0); root.add(n);
     for (const c of kit.colliders) colliders.push(worldRect(c, pos, rotY));
     n.traverse((x) => { if (x.isLight) (x.userData.interior ? interior : lamps).push(x); });
+    if (n.userData.rig) structures.push(n); // V5: doors and shutters that open
     return n;
   };
   // storefronts down both sides of Main Street, alleys in between
@@ -67,7 +68,7 @@ export function westernTown({ seed = 7 } = {}) {
     list.forEach((b, i) => {
       const pd = b.porch === false ? 0 : 2.4;
       z -= b.width / 2;
-      const kit = A.building(new A.Kit(palette), { ...b, porchDepth: 2.4, seed: seed + i * 13 + (side > 0 ? 100 : 0) });
+      const kit = A.building(new A.Kit(palette, { openable: true }), { ...b, porchDepth: 2.4, seed: seed + i * 13 + (side > 0 ? 100 : 0) });
       place(kit, [side * (STREET_HALF + pd + 0.4), 0, z], side < 0 ? 90 : -90, b.sign);
       z -= b.width / 2 + 2.2 + r() * 2.5;
     });
@@ -100,7 +101,7 @@ export function westernTown({ seed = 7 } = {}) {
   colliders.push({ min: [-bound - 5, -bound - 5], max: [-bound, bound + 5] }, { min: [bound, -bound - 5], max: [bound + 5, bound + 5] }, { min: [-bound, -bound - 5], max: [bound, -bound] }, { min: [-bound, bound], max: [bound, bound + 5] });
   let nightAmt = -1;
   return {
-    root, colliders, palette, lamps, interior, rotors,
+    root, colliders, palette, lamps, interior, rotors, structures,
     // 0 = day, 1 = full night: windows glow, lamps and interiors switch on
     setNight(n) {
       if (Math.abs(n - nightAmt) < 0.01) return; nightAmt = n;
@@ -108,7 +109,7 @@ export function westernTown({ seed = 7 } = {}) {
       for (const l of lamps) l.intensity = 14 * n;
       for (const l of interior) l.intensity = 5 * n;
     },
-    update(dt) { for (const rt of rotors) { rt.userData.angle = (rt.userData.angle || 0) + dt * 1.6; rt.setEuler(0, 0, rt.userData.angle * 57.3); } },
+    update(dt) { for (const st of structures) st.userData.rig.update(dt); for (const rt of rotors) { rt.userData.angle = (rt.userData.angle || 0) + dt * 1.6; rt.setEuler(0, 0, rt.userData.angle * 57.3); } },
   };
 }
 
