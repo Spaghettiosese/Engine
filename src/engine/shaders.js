@@ -11,7 +11,7 @@ layout(location=6) in vec4 aI0;
 layout(location=7) in vec4 aI1;
 layout(location=8) in vec4 aI2;
 layout(location=9) in vec4 aI3;
-uniform bool uInstanced;  // per-instance model matrix in attributes 6..9
+uniform int uInstanced;   // per-instance model matrix in attributes 6..9 (1 InstancedMesh, 2 auto-batch)
 uniform mat4 uModel;      // world transform (character root for skinned meshes)
 uniform mat4 uLocal;      // part transform (applied before skinning)
 uniform mat4 uViewProj;
@@ -35,12 +35,12 @@ void main(){
     mat4 s = aWeights.x*jointMat(int(aJoints.x)) + aWeights.y*jointMat(int(aJoints.y)) + aWeights.z*jointMat(int(aJoints.z)) + aWeights.w*jointMat(int(aJoints.w));
     lp = s * lp; ln = mat3(s) * ln;
   }
-  mat4 inst = uInstanced ? mat4(aI0, aI1, aI2, aI3) : mat4(1.0);
+  mat4 inst = uInstanced > 0 ? mat4(aI0, aI1, aI2, aI3) : mat4(1.0);
   vec4 wp = uModel * inst * lp;
   vec3 n = normalize(mat3(uModel) * mat3(inst) * ln);
   wp.xyz += n * uInflate;
   // instances get their own pattern offset so repeated props don't look identical
-  vWorld = wp.xyz; vNormal = n; vUV = aUV; vRest = aRest + (uInstanced ? aI3.xyz * 0.731 : vec3(0.0)); vRestN = aNormal;
+  vWorld = wp.xyz; vNormal = n; vUV = aUV; vRest = aRest + (uInstanced == 1 ? aI3.xyz * 0.731 : vec3(0.0)); vRestN = aNormal;
   vShadow = uShadowVP * vec4(wp.xyz + n*0.02, 1.0);
   gl_Position = uViewProj * wp;
 }`;

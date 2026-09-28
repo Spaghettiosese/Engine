@@ -5,7 +5,7 @@ import * as E from '../src/engine/index.js';
 
 const $ = (id) => document.getElementById(id);
 let renderer;
-try { renderer = new E.Renderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Architect needs WebGL2. ' + e.message; throw e; }
+try { renderer = await E.createRenderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Architect needs WebGPU or WebGL2. ' + e.message; throw e; }
 
 const scene = new E.Scene();
 const env = scene.environment;

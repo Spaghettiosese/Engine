@@ -8,7 +8,7 @@ import { westernTown, collide } from '../src/content/town.js';
 
 const $ = (id) => document.getElementById(id);
 let renderer;
-try { renderer = new E.Renderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Frontier Town needs WebGL2. ' + e.message; throw e; }
+try { renderer = await E.createRenderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Frontier Town needs WebGPU or WebGL2. ' + e.message; throw e; }
 renderer.settings.vignette = 0.3;
 
 const scene = new E.Scene();
@@ -227,7 +227,7 @@ function frame(now) {
     const h = Math.floor(state.hours), m = Math.floor((state.hours - h) * 60);
     $('todOut').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     const S = renderer.stats;
-    $('stats').innerHTML = `<b>${fps.toFixed(0)}</b> fps<br>draws <b>${S.drawCalls}</b> · culled <b>${S.culled}</b><br>tris <b>${Math.round(S.triangles).toLocaleString()}</b><br>lights <b>${Math.min(16, town.lamps.length + town.interior.length)}</b> nearest of ${town.lamps.length + town.interior.length}<br>speed <b>${v.toFixed(1)}</b> m/s`;
+    $('stats').innerHTML = `<b>${fps.toFixed(0)}</b> fps · ${renderer.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'}<br>draws <b>${S.drawCalls}</b> · culled <b>${S.culled}</b><br>tris <b>${Math.round(S.triangles).toLocaleString()}</b><br>lights <b>${Math.min(16, town.lamps.length + town.interior.length)}</b> nearest of ${town.lamps.length + town.interior.length}<br>speed <b>${v.toFixed(1)}</b> m/s`;
   }
   requestAnimationFrame(frame);
 }

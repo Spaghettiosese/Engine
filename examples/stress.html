@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stress Test</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="examples.css">
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Rendering stress test"></canvas>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Stress Test</h1><small>ShapeForge V5 example · WebGPU, GPU culling, automatic instancing</small></div></div>
+  <div class="card keys hide-sm">A desert of <b id="nInst">40,000</b> instanced rocks and cacti plus <b id="nProps">2,000</b> separate crates and barrels. With WebGPU a compute pass culls the instances and fills the draw arguments on the GPU. Repeated props are merged into instanced draws automatically on both backends.</div>
+  <div class="card" style="display:grid;gap:6px">
+    <div class="row"><label for="density">Instances</label><input id="density" type="range" min="5000" max="120000" step="5000" value="40000"><output id="densityOut"></output></div>
+    <div class="toggles">
+      <label><input type="checkbox" id="tCull" checked> GPU culling</label>
+      <label><input type="checkbox" id="tAuto" checked> Auto instancing</label>
+      <label><input type="checkbox" id="tFly" checked> Fly camera</label>
+      <label><input type="checkbox" id="tShadows" checked> Shadows</label>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><a class="btn" id="swap" href="#">Switch backend</a></div>
+  </div>
+</div>
+<div class="stats card" id="stats"></div>
+<nav class="nav"><a href="../index.html">Home</a><a href="frontier-town.html">Frontier Town</a><a href="workshop.html">Workshop</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="stress.js"></script>
+</body>
+</html>

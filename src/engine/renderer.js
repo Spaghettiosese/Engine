@@ -62,6 +62,7 @@ export class Renderer {
     this.stats = { drawCalls: 0, triangles: 0, culled: 0, gpuMs: 0, cpuMs: 0, scale: 1, lod: 0 };
     this.time = 0;
     this.settings = {
+      autoInstancing: true,
       bloom: true, bloomStrength: 0.22, bloomThreshold: 1.1, vignette: 0.35, grain: 0.012, exposure: 1.0, fxaa: false, ssao: true, godRays: true, culling: true,
       // V3
       ssr: true, ssrStrength: 1, ssrMaxRoughness: 0.5, volumetrics: true, contactShadows: true, softShadows: true,
@@ -291,7 +292,7 @@ export class Renderer {
   }
   _bindMesh(p, mesh, jointTexOverride) {
     const gl = this.gl;
-    p.i('uInstanced', mesh.instanceMatrices ? 1 : 0);
+    p.i('uInstanced', mesh.instanceMatrices ? (mesh.autoBatch ? 2 : 1) : 0);
     if (mesh.skeleton && mesh.skinRoot) {
       p.m4('uModel', mesh.skinRoot.world); p.m4('uLocal', mesh.local); p.i('uSkinned', 1);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, jointTexOverride || this._skelTex(mesh.skeleton));
@@ -328,6 +329,32 @@ export class Renderer {
       return;
     }
     this._draw(m.lods ? this._lod(m) : m.geometry, wire);
+  }
+  // Automatic instancing: static meshes that share geometry and material are drawn as one
+  // instanced draw. Batches are cached per (geometry, material) and refilled each frame.
+  _autoBatch(list, tag) {
+    if (!this.settings.autoInstancing) return list;
+    const out = [], groups = new Map();
+    for (const m of list) {
+      if (m.instanceMatrices || m.skeleton || m.lods || !m.material || m.material.opacity < 1 || m.userData.shading !== undefined) { out.push(m); continue; }
+      let g = groups.get(m.geometry); if (!g) { g = new Map(); groups.set(m.geometry, g); }
+      let arr = g.get(m.material); if (!arr) { arr = []; g.set(m.material, arr); }
+      arr.push(m);
+    }
+    this._batches ||= new WeakMap();
+    for (const [geo, g] of groups) for (const [mat, arr] of g) {
+      if (arr.length === 1) { out.push(arr[0]); continue; }
+      let byMat = this._batches.get(geo); if (!byMat) { byMat = new Map(); this._batches.set(geo, byMat); }
+      const key = mat; let perTag = byMat.get(key); if (!perTag) { perTag = {}; byMat.set(key, perTag); }
+      let b = perTag[tag];
+      if (!b) b = perTag[tag] = { autoBatch: true, geometry: geo, material: mat, world: IDENTITY, local: IDENTITY, instanceMatrices: new Float32Array(0), count: 0, instanceVersion: 0, castShadow: true, userData: {}, visible: true };
+      if (b.instanceMatrices.length < arr.length * 16) b.instanceMatrices = new Float32Array(arr.length * 16);
+      arr.forEach((m, i) => b.instanceMatrices.set(m.world, i * 16));
+      b.count = arr.length; b.instanceVersion++;
+      this.stats.batched += arr.length - 1;
+      out.push(b);
+    }
+    return out;
   }
   // Level of detail: mesh.lods = [{ distance, geometry }, ...] swaps in cheaper geometry far away.
   _lod(m) {
@@ -459,7 +486,7 @@ export class Renderer {
     const t0 = performance.now();
     this._adapt(t0);
     this.resize();
-    this.stats.drawCalls = 0; this.stats.triangles = 0; this.stats.lod = 0;
+    this.stats.drawCalls = 0; this.stats.triangles = 0; this.stats.lod = 0; this.stats.batched = 0;
     this._lastMat = null; this._lastProg = null; this._camPos = camera.position;
     this._beginGpuTimer();
     this.time += 1 / 60;
@@ -484,9 +511,8 @@ export class Renderer {
         const p = this.prog.depth.use();
         p.m4('uViewProj', vp); p.m4('uShadowVP', vp); p.f('uInflate', 0);
         const sc = env.shadowCenter, sr = radius * 1.8;
-        for (const m of meshes) {
-          if (!m.castShadow || (m.material && m.material.opacity < 0.5)) continue;
-          if (this.settings.culling) { const s = this._sphere(m); if (vec3.dist(s.c, sc) - s.r > sr) continue; }
+        const casters = meshes.filter((m) => m.castShadow && !(m.material && m.material.opacity < 0.5) && (!this.settings.culling || vec3.dist(this._sphere(m).c, sc) - this._sphere(m).r <= sr));
+        for (const m of this._autoBatch(casters, 'shadow' + size)) {
           if (m.material?.doubleSided) gl.disable(gl.CULL_FACE); else gl.enable(gl.CULL_FACE);
           this._bindMesh(p, m); this._drawMesh(m);
         }
@@ -507,8 +533,11 @@ export class Renderer {
 
     // frustum culling for everything drawn from the camera
     const planes = this._frustum(camera.viewProj);
-    const visible = this.settings.culling ? meshes.filter((m) => this._visible(m, planes)) : meshes;
-    this.stats.culled = meshes.length - visible.length;
+    const visibleMeshes = this.settings.culling ? meshes.filter((m) => this._visible(m, planes)) : meshes;
+    this.stats.culled = meshes.length - visibleMeshes.length;
+    const shadowBatched = this.stats.batched;
+    const visible = o.xray || shading === 'wireframe' ? visibleMeshes : this._autoBatch(visibleMeshes, 'main');
+    this.stats.batched -= shadowBatched;
 
     // ambient occlusion: half-res normal/depth pre-pass, SSAO, depth-aware blur
     const useAO = lit && env.ao !== false && this.settings.ssao && this.hdr && !camera.ortho && shading !== 'toon';

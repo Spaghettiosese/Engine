@@ -11,7 +11,7 @@ import { createRevolver, revolverFired, updateRevolver, HAND_SOCKET, HOLSTER_SOC
 const $ = (id) => document.getElementById(id);
 const PM = E.physicsMath;
 let renderer;
-try { renderer = new E.Renderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Showdown needs WebGL2. ' + e.message; throw e; }
+try { renderer = await E.createRenderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Showdown needs WebGPU or WebGL2. ' + e.message; throw e; }
 
 // ---------------------------------------------------------------- world
 const scene = new E.Scene(), env = scene.environment;

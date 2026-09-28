@@ -19,7 +19,8 @@ import * as E from '../src/engine/index.js';
 import { createCowboy } from '../src/content/cowboy.js';
 
 // renderer, scene, camera and orbit controls
-const renderer = new E.Renderer(document.getElementById('stage'));
+const renderer = await E.createRenderer(document.getElementById('stage')); // WebGPU when available, else WebGL2
+window.__r = renderer;
 const scene = new E.Scene();
 const camera = new E.Camera();
 camera.position.set([8, 4.5, 11]); camera.target.set([0, 1.5, -2]);

@@ -258,7 +258,7 @@ runLoop((dt) =&gt; {
   const grinHow = { Idle: 'Planted feet, slow head tilt with a sharp twitch, claws flexing in sequence', Walk: 'Gait synth: bent-knee stalk, lolling head, dangling arms that lag the stride', Chase: 'Gait synth: 5 m/s sprint, 28° lean, arms reaching forward, jittering head', Crawl: 'All-fours synth: hands and feet planted, elbows and knees splayed, head tilted sideways' };
   document.getElementById('grinRows').innerHTML = grinnerClips().map((c) => `<tr><td>${c.name}</td><td class="num">${c.duration.toFixed(2)} s</td><td class="num">${c.rootMotion[2] ? c.rootMotion[2].toFixed(2) + ' m/s' : 'in place'}</td><td class="num">${c.tracks.length}</td><td>${grinHow[c.name] || ''}</td></tr>`).join('');
   let renderer;
-  try { renderer = new E.Renderer(canvas); } catch { document.getElementById('fallback').hidden = false; }
+  try { renderer = await E.createRenderer(canvas); } catch { document.getElementById('fallback').hidden = false; }
   if (renderer) {
     const scene = new E.Scene(); scene.add(westernSet()); scene.add(cowboy);
     const camera = new E.Camera(); camera.fov = 34 * E.DEG;

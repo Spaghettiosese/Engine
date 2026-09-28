@@ -6,7 +6,7 @@ import { createCowboy } from '../src/content/cowboy.js';
 
 const $ = (id) => document.getElementById(id);
 let renderer;
-try { renderer = new E.Renderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'The Lighting Lab needs WebGL2. ' + e.message; throw e; }
+try { renderer = await E.createRenderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'The Lighting Lab needs WebGPU or WebGL2. ' + e.message; throw e; }
 
 const scene = new E.Scene();
 const env = scene.environment;

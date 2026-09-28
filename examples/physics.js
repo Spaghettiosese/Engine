@@ -6,7 +6,7 @@ import { createCowboy } from '../src/content/cowboy.js';
 
 const $ = (id) => document.getElementById(id);
 let renderer;
-try { renderer = new E.Renderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'The playground needs WebGL2. ' + e.message; throw e; }
+try { renderer = await E.createRenderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'The playground needs WebGPU or WebGL2. ' + e.message; throw e; }
 const scene = new E.Scene(), env = scene.environment;
 E.applyTimeOfDay(env, 16.2); env.shadowRadius = 14; env.fogDensity = 0.004; env.volumetric = 0.25;
 const camera = new E.Camera(); camera.fov = 45 * E.DEG; camera.far = 300;

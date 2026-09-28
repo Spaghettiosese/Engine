@@ -30,7 +30,7 @@
 import * as E from '../src/engine/index.js';
 const $ = (id) => document.getElementById(id);
 let renderer;
-try { renderer = new E.Renderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Needs WebGL2. ' + e.message; throw e; }
+try { renderer = await E.createRenderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Needs WebGPU or WebGL2. ' + e.message; throw e; }
 const scene = new E.Scene(), env = scene.environment;
 env.shadowRadius = 4; env.shadowCenter = [0, 1, 0];
 scene.add(new E.Mesh(E.plane({ width: 60, depth: 60 }), new E.Material({ color: '#8f8070', pattern: 'dirt', patternScale: 1, patternColor: '#6a5a48', roughness: 1 })));

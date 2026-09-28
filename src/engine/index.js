@@ -38,3 +38,4 @@ export function runLoop(update) {
   requestAnimationFrame(frame);
   return () => { stopped = true; };
 }
+export * from './webgpu.js';
