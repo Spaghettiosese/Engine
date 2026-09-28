@@ -2,6 +2,7 @@
 // a playable WASD mode (idle/walk/run blend tree + crawl), onion skins and exports.
 import * as E from '../engine/index.js';
 import { createCowboy } from '../content/cowboy.js';
+import { createGrinner } from '../content/monster.js';
 import { westernSet } from '../content/scenery.js';
 
 const $ = (id) => document.getElementById(id);
@@ -66,7 +67,7 @@ function onEvent(e) {
   const i = sk.boneIndex(bone); if (i < 0) return;
   const p = E.vec3.transformMat4([0, 0, 0], sk.worldHead(i), character.world);
   p[1] = 0.02;
-  const run = (character.mixer.action('Run')?.weight || 0);
+  const run = Math.min(1, character.mixer.rootVelocity()[2] / 3);
   particles.emit(p, { count: e.name === 'handplant' ? 6 : 8 + Math.round(run * 12), spread: 0.3 + run * 0.5, up: 0.25 + run * 0.4, size: 0.1 + run * 0.08, color: [0.78, 0.64, 0.48, 0.45], life: 1.0 + run * 0.6 });
 }
 
@@ -77,10 +78,10 @@ const setMode = (m) => {
   $('modeHint').textContent = {
     inplace: 'Clips play on the spot. Good for inspecting poses frame by frame.',
     roam: 'Root motion drives the cowboy around a loop; the camera follows.',
-    play: 'WASD / arrows to move, Shift to run, C to crawl. Speed blends Idle → Walk → Run.',
+    play: 'WASD / arrows to move, Shift to run (the Grinner chases), C to crawl. Speed blends idle, walk and run.',
   }[m];
   if (m === 'inplace') { character.position.set([0, 0, 0]); }
-  if (m === 'play') { state.moveSpeed = 0; character.mixer.setWeights({ Idle: 1 }, 0.3); }
+  if (m === 'play') { state.moveSpeed = 0; character.mixer.setWeights({ [(character.def.roles || {}).idle || 'Idle']: 1 }, 0.3); }
 };
 document.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
 const bindToggle = (id, key, fn) => { const el = $(id); el.checked = !!state[key]; el.onchange = () => { state[key] = el.checked; fn && fn(el.checked); }; };
@@ -112,7 +113,7 @@ $('fileInput').onchange = async (e) => {
   try { const def = JSON.parse(await f.text()); loadCharacter(new E.Character(def)); const o = document.createElement('option'); o.textContent = def.name || f.name; o.value = 'file'; $('modelSelect').appendChild(o); $('modelSelect').value = 'file'; }
   catch (err) { $('modelMeta').textContent = 'Could not load that file: ' + err.message; }
 };
-$('modelSelect').onchange = (e) => { if (e.target.value === 'cowboy') loadCharacter(createCowboy()); if (e.target.value === 'studio' && handoff) loadCharacter(new E.Character(handoff)); };
+$('modelSelect').onchange = (e) => { if (e.target.value === 'cowboy') loadCharacter(createCowboy()); if (e.target.value === 'grinner') loadCharacter(createGrinner()); if (e.target.value === 'studio' && handoff) loadCharacter(new E.Character(handoff)); };
 function exportMsg(ok, name) { $('exportMsg').textContent = ok ? `Saved ${name}` : 'Downloads are blocked here. Open the viewer from the repository to export.'; }
 $('exportGLB').onclick = () => { const bytes = E.exportGLB(character); exportMsg(E.download(character.name.toLowerCase() + '.glb', bytes, 'model/gltf-binary'), character.name.toLowerCase() + '.glb (' + (bytes.length / 1024).toFixed(0) + ' KB)'); };
 $('exportJSON').onclick = () => exportMsg(E.download(character.name.toLowerCase() + '.json', JSON.stringify(character.toJSON()), 'application/json'), character.name.toLowerCase() + '.json');
@@ -162,7 +163,11 @@ function updatePlay(dt) {
   let iz = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
   const moving = ix || iz;
   const run = k.has('shift');
-  const target = !moving ? 0 : state.crawl ? 1 : run ? 3 : 1.15;
+  // blend tree driven by each character's own clip roles and root-motion speeds
+  const roles = { idle: 'Idle', walk: 'Walk', run: 'Run', crawl: 'Crawl', ...(character.def.roles || {}) };
+  const spd = (r) => character.mixer.clips.get(roles[r])?.rootMotion[2] || 0;
+  const vWalk = spd('walk') || 1, vRun = spd('run') || vWalk * 2.5;
+  const target = !moving ? 0 : state.crawl ? 1 : run ? vRun : vWalk;
   state.moveSpeed += (target - state.moveSpeed) * Math.min(1, dt * 4);
   if (moving) {
     // camera-relative direction
@@ -173,12 +178,11 @@ function updatePlay(dt) {
     let d = want - state.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
     state.yaw += d * Math.min(1, dt * (state.crawl ? 3 : 8));
   }
-  // blend tree: idle / walk / run by speed, or crawl
   const s = state.moveSpeed;
   let w;
-  if (state.crawl) w = { Crawl: 1 };
-  else if (s < 1.15) w = { Idle: Math.max(0, 1 - s / 1.15), Walk: Math.min(1, s / 1.15) };
-  else w = { Walk: Math.max(0, 1 - (s - 1.15) / 1.85), Run: Math.min(1, (s - 1.15) / 1.85) };
+  if (state.crawl) w = { [roles.crawl]: 1 };
+  else if (s < vWalk) w = { [roles.idle]: Math.max(0, 1 - s / vWalk), [roles.walk]: Math.min(1, s / vWalk) };
+  else w = { [roles.walk]: Math.max(0, 1 - (s - vWalk) / (vRun - vWalk)), [roles.run]: Math.min(1, (s - vWalk) / (vRun - vWalk)) };
   character.mixer.setWeights(w, state.crawl ? 0.6 : 0.25);
   if (state.crawl && !moving) character.mixer.timeScale = 0; // hold the crawl pose when stopped
   const v = character.mixer.rootVelocity()[2];
@@ -259,4 +263,4 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-window.__viewer = { character, scene, camera, controls, renderer, state, setMode, playClip: (n) => playClip(n) };
+window.__viewer = { get character() { return character; }, scene, camera, controls, renderer, state, setMode, playClip: (n) => playClip(n) };

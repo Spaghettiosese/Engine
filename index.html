@@ -124,6 +124,15 @@
     </table>
   </div>
 
+  <h2>The Grinner</h2>
+  <p class="sub">A 2.5 m, gaunt yellow creature on the same humanoid rig: an egg-shaped skull, sunken eye sockets, an ear-to-ear grin made from arrayed, mirrored and bent teeth, exposed ribs, and clawed fingers on arms that hang past its knees. Its quirks (head lolls, twitches, flexing claws) are layered onto synthesized cycles.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Clip</th><th>Length</th><th>Speed</th><th>Keyed channels</th><th>How it was made</th></tr></thead>
+      <tbody id="grinRows"></tbody>
+    </table>
+  </div>
+
   <h2 id="use">Use it in a game</h2>
   <p class="sub">No build step and no dependencies. Import the engine as ES modules and load a character the Studio saved.</p>
 <pre><span class="k">import</span> { Renderer, Scene, Camera, Character, runLoop } <span class="k">from</span> <span class="s">'./src/engine/index.js'</span>;
@@ -145,6 +154,7 @@ runLoop((dt) =&gt; {
   import * as E from './src/engine/index.js';
   import { createCowboy } from './src/content/cowboy.js';
   import { westernSet } from './src/content/scenery.js';
+  import { grinnerClips } from './src/content/monster.js';
   const canvas = document.getElementById('stage');
   const cowboy = createCowboy();
   const clips = [...cowboy.mixer.clips.values()];
@@ -154,6 +164,8 @@ runLoop((dt) =&gt; {
   document.getElementById('sTris').textContent = cowboy.triangleCount.toLocaleString();
   document.getElementById('sMats').textContent = cowboy.materials.size;
   document.getElementById('clipRows').innerHTML = clips.map((c) => `<tr><td>${c.name}</td><td class="num">${c.duration.toFixed(2)} s</td><td class="num">${c.rootMotion[2] ? c.rootMotion[2].toFixed(2) + ' m/s' : 'in place'}</td><td class="num">${c.tracks.length}</td><td>${how[c.name] || ''}</td></tr>`).join('');
+  const grinHow = { Idle: 'Planted feet, slow head tilt with a sharp twitch, claws flexing in sequence', Walk: 'Gait synth: bent-knee stalk, lolling head, dangling arms that lag the stride', Chase: 'Gait synth: 5 m/s sprint, 28° lean, arms reaching forward, jittering head', Crawl: 'All-fours synth: hands and feet planted, elbows and knees splayed, head tilted sideways' };
+  document.getElementById('grinRows').innerHTML = grinnerClips().map((c) => `<tr><td>${c.name}</td><td class="num">${c.duration.toFixed(2)} s</td><td class="num">${c.rootMotion[2] ? c.rootMotion[2].toFixed(2) + ' m/s' : 'in place'}</td><td class="num">${c.tracks.length}</td><td>${grinHow[c.name] || ''}</td></tr>`).join('');
   let renderer;
   try { renderer = new E.Renderer(canvas); } catch { document.getElementById('fallback').hidden = false; }
   if (renderer) {

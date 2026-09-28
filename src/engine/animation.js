@@ -153,8 +153,17 @@ export class Mixer {
     for (const b of this.actions.values()) this._fadeTo(b, b === a ? 1 : 0, fade);
   }
   // Direct blend-tree control: setWeights({ walk: 0.3, run: 0.7 })
-  setWeights(map, fade = 0.2) { for (const [n, b] of this.actions) this._fadeTo(b, map[n] || 0, fade); }
+  // Blend-tree control, safe to call every frame: weights move toward their targets at a
+  // steady rate (full swing in `fade` seconds) instead of restarting an eased fade.
+  setWeights(map, fade = 0.2) {
+    for (const [n, b] of this.actions) {
+      b.to = map[n] || 0; b.fadeT = 1; b.track = fade > 0 ? 1 / fade : Infinity;
+      if (b.to > 0 && b.weight === 0 && !(b.clip.syncGroup && this.dominant()?.clip.syncGroup === b.clip.syncGroup)) b.time = 0;
+      if (b.to > 0 && b.weight === 0) { const d = this.dominant(); if (d && d !== b && d.clip.syncGroup && d.clip.syncGroup === b.clip.syncGroup) b.time = d.phase * b.clip.duration; }
+    }
+  }
   _fadeTo(a, target, dur) {
+    a.track = 0;
     if (a.to === target && a.fadeT < 1) return;
     a.from = a.weight; a.to = target; a.fadeDur = dur; a.fadeT = dur > 0 ? 0 : 1;
     if (dur <= 0) a.weight = target;
@@ -167,7 +176,8 @@ export class Mixer {
     dt *= this.timeScale;
     // weights
     for (const a of this.actions.values()) {
-      if (a.fadeT < 1) { a.fadeT = Math.min(1, a.fadeT + dt / a.fadeDur); a.weight = a.from + (a.to - a.from) * easeInOut(a.fadeT); }
+      if (a.track) { const step = dt * a.track; a.weight += Math.max(-step, Math.min(step, a.to - a.weight)); }
+      else if (a.fadeT < 1) { a.fadeT = Math.min(1, a.fadeT + dt / a.fadeDur); a.weight = a.from + (a.to - a.from) * easeInOut(a.fadeT); }
     }
     // sync groups: shared phase rate = weighted mean of member rates
     const groups = new Map();

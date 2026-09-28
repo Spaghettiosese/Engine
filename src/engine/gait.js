@@ -11,6 +11,9 @@ const TAU = Math.PI * 2;
 const E = (x, y, z) => quat.fromEuler(quat.create(), x, y, z);
 const ease = (t) => (1 - Math.cos(Math.PI * clamp(t, 0, 1))) / 2;
 const bez = (a, b, c, d, t) => { const u = 1 - t; return a.map((_, k) => u * u * u * a[k] + 3 * u * u * t * b[k] + 3 * u * t * t * c[k] + t * t * t * d[k]); };
+// Cubic Hermite from z0 to z1 whose end tangents (m, per unit s) match the stance velocity,
+// so a limb leaves and meets the ground without a velocity jump (no key overshoot).
+const swingZ = (z0, z1, m, s) => { const s2 = s * s, s3 = s2 * s; return (2 * s3 - 3 * s2 + 1) * z0 + (s3 - 2 * s2 + s) * m + (-2 * s3 + 3 * s2) * z1 + (s3 - s2) * m; };
 const rotX = (v, deg) => { const r = (deg * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r); return [v[0], v[1] * c - v[2] * s, v[1] * s + v[2] * c]; };
 
 // ------------------------------------------------------------------ hands
@@ -49,6 +52,17 @@ export function applyHandPose(sk, side, pose) {
       if (i2 >= 0) sk.rot.set(quat.fromEuler(q, 0, 0, m * -95 * Math.pow(c, 1.15)), i2 * 4);
     }
   });
+}
+
+// Handle passed to per-sample overlay callbacks so a creature can add its own quirks
+// (head twitches, hand flexing) on top of a synthesized cycle.
+function overlayApi(sk, R) {
+  return {
+    sk, TAU,
+    set: (name, e, side) => { R.set(name, e, side); sk.update(); },
+    setWorld: (name, e) => { const i = sk.boneIndex(name); if (i >= 0) setWorldRotation(sk, i, E(e[0], e[1], e[2])); },
+    hand: (side, pose) => { applyHandPose(sk, side, pose); sk.update(); },
+  };
 }
 
 class Rig {
@@ -172,6 +186,7 @@ export function synthesizeLocomotion(sk, o) {
     sk.update();
     R.set('neck', [-p.lean * 0.4, 0, 0]);
     setWorldRotation(sk, R.i.head, E(p.headPitch, 0, 0));
+    if (p.overlay) { p.overlay(overlayApi(sk, R), phi); sk.update(); }
     samples.push(sk.snapshotPose());
   }
   const record = sk.bones.map((b, i) => i).filter((i) => !sk.bones[i].spring && sk.bones[i].name !== 'root');
@@ -191,7 +206,7 @@ export function synthesizeCrawl(sk, o = {}) {
   const contact = (ph, center, lift) => {
     if (ph < p.stance) return { z: center + S / 2 - (S * ph) / p.stance, y: 0, s: -1 };
     const s = (ph - p.stance) / (1 - p.stance);
-    return { z: center - S / 2 + S * ease(s), y: lift * Math.sin(Math.PI * s), s };
+    return { z: swingZ(center - S / 2, center + S / 2, (-S / p.stance) * (1 - p.stance), s), y: lift * Math.sin(Math.PI * s), s };
   };
   const samples = [];
   let hipY = p.knee + L1 + 0.02;
@@ -255,7 +270,7 @@ export function synthesizeCrawl(sk, o = {}) {
 
 // ------------------------------------------------------------------ idle (planted feet, breathing, thumbs in belt)
 export function synthesizeIdle(sk, o = {}) {
-  const p = { name: 'Idle', duration: 4, samples: 48, hipHeight: 0.965, thumbHook: true, ...o };
+  const p = { name: 'Idle', duration: 4, samples: 48, hipHeight: 0.965, footX: 0.13, thumbHook: true, ...o };
   const R = new Rig(sk), T = p.duration;
   const samples = [];
   for (let k = 0; k < p.samples; k++) {
@@ -269,7 +284,7 @@ export function synthesizeIdle(sk, o = {}) {
     // planted feet
     for (const side of ['L', 'R']) {
       const sg = side === 'L' ? 1 : -1;
-      twoBoneIK(sk, R.i['thigh.' + side], R.i['shin.' + side], R.i['foot.' + side], [sg * 0.13, R.ankleY, side === 'L' ? 0.03 : -0.02], [sg * 0.2, 0, 1]);
+      twoBoneIK(sk, R.i['thigh.' + side], R.i['shin.' + side], R.i['foot.' + side], [sg * p.footX, R.ankleY, side === 'L' ? 0.03 : -0.02], [sg * 0.2, 0, 1]);
       setWorldRotation(sk, R.i['foot.' + side], E(0, sg * 10, 0));
     }
     // left thumb hooked in the belt, right hand relaxed near the holster
@@ -289,10 +304,68 @@ export function synthesizeIdle(sk, o = {}) {
     sk.update();
     R.set('neck', [0, 6 * Math.sin(TAU * phi + 0.6), 0]);
     setWorldRotation(sk, R.i.head, E(-2 + 2.5 * s2, 14 * Math.sin(TAU * phi + 0.3) * smoothstep(-0.2, 0.6, c1 * 0.5 + 0.5), 0));
+    if (p.overlay) { p.overlay(overlayApi(sk, R), phi); sk.update(); }
     samples.push(sk.snapshotPose());
   }
   const record = sk.bones.map((b, i) => i).filter((i) => !sk.bones[i].spring && sk.bones[i].name !== 'root');
   const clip = bake(sk, p.name, T, samples, record, { rootMotion: [0, 0, 0], syncGroup: null, events: [] });
+  sk.resetPose(); sk.update();
+  return clip;
+}
+
+// ------------------------------------------------------------------ all fours (hands and feet)
+// A long-limbed "spider" crawl: hips high, knees and elbows splayed outward, palms and
+// soles planted with IK. Diagonal sequence: left foot, left hand, right foot, right hand.
+export function synthesizeAllFours(sk, o = {}) {
+  const p = {
+    name: 'Crawl', duration: 1.3, speed: 0.9, stance: 0.66, samples: 26, hipHeight: 0.95, pitch: 72, bob: 0.03,
+    footWidth: 0.24, footZ: -0.12, handWidth: 0.16, handReach: 0.28, handY: 0.03, lift: 0.14, footLift: 0.12,
+    kneePole: [1, 0.5, 0.6], elbowPole: [0.9, 0.6, -0.2], neck: -48, headPitch: 5, syncGroup: null, overlay: null, ...o,
+  };
+  const R = new Rig(sk), T = p.duration, S = p.speed * p.stance * T;
+  const off = { 'foot.L': 0, 'hand.L': 0.25, 'foot.R': 0.5, 'hand.R': 0.75 };
+  const contact = (ph, center, lift) => {
+    if (ph < p.stance) return { z: center + S / 2 - (S * ph) / p.stance, y: 0, s: -1 };
+    const s = (ph - p.stance) / (1 - p.stance);
+    return { z: swingZ(center - S / 2, center + S / 2, (-S / p.stance) * (1 - p.stance), s), y: lift * Math.sin(Math.PI * s), s };
+  };
+  const samples = [], centers = {};
+  for (let k = 0; k < p.samples; k++) {
+    const phi = k / p.samples, s1 = Math.sin(TAU * phi), c2 = Math.cos(2 * TAU * phi);
+    sk.resetPose();
+    R.hipsPos([0.03 * s1, p.hipHeight + p.bob * c2, 0]);
+    R.set('hips', [p.pitch, 8 * s1, -6 * s1]);
+    R.set('spine', [4, -6 * s1, 5 * s1]);
+    R.set('chest', [3, -6 * s1, 4 * s1]);
+    sk.update();
+    for (const side of ['L', 'R']) {
+      const sg = side === 'L' ? 1 : -1;
+      const hj = sk.worldHead(R.i['thigh.' + side]);
+      centers['foot.' + side] ??= hj[2] + p.footZ;
+      const c = contact(fract(phi + off['foot.' + side]), centers['foot.' + side], p.footLift);
+      twoBoneIK(sk, R.i['thigh.' + side], R.i['shin.' + side], R.i['foot.' + side], [sg * p.footWidth, R.ankleY + c.y, c.z], [sg * p.kneePole[0], p.kneePole[1], p.kneePole[2]]);
+      const lift = c.s >= 0 ? Math.sin(Math.PI * c.s) : 0;
+      setWorldRotation(sk, R.i['foot.' + side], E(25 * smoothstep(0.35, 1, lift), sg * 12, 0));
+      setWorldRotation(sk, R.i['toe.' + side], E(0, sg * 12, 0));
+    }
+    for (const side of ['L', 'R']) {
+      const sg = side === 'L' ? 1 : -1;
+      const sh = sk.worldHead(R.i['upperArm.' + side]);
+      centers['hand.' + side] ??= [sh[0] + sg * p.handWidth, sh[2] + p.handReach];
+      const c = contact(fract(phi + off['hand.' + side]), centers['hand.' + side][1], p.lift);
+      twoBoneIK(sk, R.i['upperArm.' + side], R.i['foreArm.' + side], R.i['hand.' + side], [centers['hand.' + side][0], p.handY + c.y, c.z], [sg * p.elbowPole[0], p.elbowPole[1], p.elbowPole[2]]);
+      const lift = c.s >= 0 ? Math.sin(Math.PI * c.s) : 0;
+      setWorldRotation(sk, R.i['hand.' + side], quat.multiply(quat.create(), E(0, sg * 20, 0), quat.multiply(quat.create(), E(0, 0, sg * 90), E(-90 + 40 * lift, 0, 0))));
+      applyHandPose(sk, side, blendHandPoses(HAND_POSES.spread, HAND_POSES.claw, lift));
+    }
+    sk.update();
+    R.set('neck', [p.neck, -4 * s1, 0]);
+    setWorldRotation(sk, R.i.head, E(p.headPitch + 3 * c2, 0, 0));
+    if (p.overlay) { p.overlay(overlayApi(sk, R), phi); sk.update(); }
+    samples.push(sk.snapshotPose());
+  }
+  const record = sk.bones.map((b, i) => i).filter((i) => !sk.bones[i].spring && sk.bones[i].name !== 'root');
+  const clip = bake(sk, p.name, T, samples, record, { rootMotion: [0, 0, p.speed], syncGroup: p.syncGroup, events: [{ t: 0, name: 'footstep', side: 'L' }, { t: T / 4, name: 'handplant', side: 'L' }, { t: T / 2, name: 'footstep', side: 'R' }, { t: (3 * T) / 4, name: 'handplant', side: 'R' }] });
   sk.resetPose(); sk.update();
   return clip;
 }

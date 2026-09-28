@@ -44,6 +44,19 @@ ES modules don't load from `file://`, so open the pages through a local server.
 
 Walk and Run share the `locomotion` sync group, so crossfading between them keeps the feet in step. `tools/test-animation.mjs` checks that every clip loops without a seam and that a planted foot slides less than 10 cm/s (it measures about 3 cm/s against a 115 cm/s walk).
 
+## The Grinner (monster)
+
+`src/content/monster.js` models the creature from your reference image: a 2.5 m, emaciated yellow humanoid with an egg-shaped skull, sunken eye sockets, an ear-to-ear grin (a half row of teeth built with **Array**, completed with **Mirror**, then wrapped around the face and curled into a smile with two **Bend** modifiers over a matching gum band), a long tendon-lined neck, collarbones, a ribcage with five arrayed rib hoops, a hollow belly, bony elbows, knees and hips, and very long arms ending in clawed fingers. 38 part definitions, 43 bones, about 56k triangles. It uses the same humanoid bone names as the Cowboy, so the gait synthesizer and hand poses work on it unchanged.
+
+| Clip | Length | Root motion | How it was made |
+| --- | --- | --- | --- |
+| Idle | 5.00 s | in place | Planted feet, a slow head tilt with a sharp twitch, claws flexing in sequence |
+| Walk | 1.70 s | 0.90 m/s | Bent-knee stalk with a lolling head and dangling arms that lag the stride |
+| Chase | 0.74 s | 5.00 m/s | Sprint with a 28° lean, arms reaching forward with spread claws, jittering head |
+| Crawl | 1.40 s | 0.95 m/s | New all-fours synthesizer: palms and soles planted with IK, elbows and knees splayed, head tipped sideways |
+
+Walk and Chase share the `grinner` sync group. The character file declares `roles` (`idle`, `walk`, `run: 'Chase'`, `crawl`), which the Viewer's WASD blend tree reads, so Shift makes it chase.
+
 ---
 
 ## Engine API (`src/engine`)
@@ -77,7 +90,7 @@ runLoop((dt) => {
 | `animation.js` | `Clip` (smooth / linear / constant keys, events, root motion, sync groups), `Mixer` (crossfades, blend weights, phase sync) |
 | `character.js` | `Character`: skeleton + parts + materials + clips, JSON round-trip, automatic left/right mirroring |
 | `ik.js` | Two-bone IK, aim constraints, world-space rotation helpers |
-| `gait.js` | Procedural gait synthesizer (`synthesizeLocomotion`, `synthesizeCrawl`, `synthesizeIdle`) and hand posing (`applyHandPose`, `HAND_POSES`: relaxed, fist, flat, point, gun grip, thumbs up, spread, claw) |
+| `gait.js` | Procedural gait synthesizer (`synthesizeLocomotion`, `synthesizeCrawl`, `synthesizeAllFours`, `synthesizeIdle`, each with an `overlay` hook for per-creature quirks) and hand posing (`applyHandPose`, `HAND_POSES`: relaxed, fist, flat, point, gun grip, thumbs up, spread, claw) |
 | `renderer.js` / `shaders.js` | Forward renderer: GGX PBR, 12-tap PCF shadows, procedural sky with mesas and clouds, derivative bump mapping, bloom, ACES, FXAA fallback, selection outlines, onion-skin ghosts, particles, GPU picking |
 | `controls.js` | Orbit / pan / zoom with Blender bindings and touch support |
 | `particles.js` | Soft point-sprite particles (footstep dust) |
@@ -155,7 +168,7 @@ Additional features:
 - Camera focus: Full body, Hands (close-up on the finger animation) or Face.
 - Skeleton, onion skin, wireframe and toon overlays; shadows, spring bones, footstep dust, set dressing, turntable, bloom and sun angle.
 - Scrub the timeline (footstep events are marked on it), step frames with ← → while paused.
-- Load any character JSON exported by the Studio.
+- Switch between the Cowboy and the Grinner, or load any character JSON exported by the Studio.
 
 ---
 
@@ -164,8 +177,9 @@ Additional features:
 ```
 index.html  editor.html  viewer.html
 assets/cowboy.json        baked Cowboy (npm run build:assets)
+assets/grinner.json       baked Grinner
 src/engine/               the engine
-src/content/              cowboy.js (model + clips), scenery.js (desert set)
+src/content/              cowboy.js, monster.js (the Grinner), scenery.js (desert set)
 src/editor/               Studio: core model, viewport, panels, dope sheet, widgets
 src/viewer/viewer.js      Animation Viewer
 src/ui/                   page styles
