@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Physics Playground</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="examples.css">
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Physics playground"></canvas>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Physics Playground</h1><small>ShapeForge V3 example · rigid bodies, joints, ragdolls</small></div></div>
+  <div class="card keys hide-sm"><b>Drag</b> objects to throw them · drag empty space to orbit<br><kbd>Space</kbd> fire a cannonball · <kbd>E</kbd> explosion at the cursor · <kbd>P</kbd> pause · <kbd>R</kbd> reset</div>
+  <div class="card" style="display:grid;gap:6px">
+    <div class="seg" role="group" aria-label="Scenario">
+      <button class="btn" data-s="tower">Tower</button><button class="btn" data-s="pyramid">Pyramid</button><button class="btn" data-s="dominoes">Dominoes</button>
+      <button class="btn" data-s="wrecking">Wrecking ball</button><button class="btn" data-s="bridge">Rope bridge</button><button class="btn" data-s="cradle">Newton's cradle</button><button class="btn" data-s="ragdolls">Ragdolls</button>
+    </div>
+    <div class="row"><label for="gravity">Gravity</label><input id="gravity" type="range" min="0" max="20" step="0.1" value="9.81"><output id="gravityOut"></output></div>
+    <div class="row"><label for="slowmo">Time scale</label><input id="slowmo" type="range" min="0.1" max="1" step="0.05" value="1"><output id="slowmoOut"></output></div>
+    <div class="toggles"><label><input type="checkbox" id="tDebug"> Show colliders</label><label><input type="checkbox" id="tSleep" checked> Sleeping</label></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" id="spawnCrate">+ Crate</button><button class="btn" id="spawnBall">+ Ball</button><button class="btn" id="spawnBarrel">+ Barrel</button><button class="btn primary" id="fire">Fire</button></div>
+  </div>
+  <div class="card keys" id="status" aria-live="polite"></div>
+</div>
+<div class="stats card" id="stats"></div>
+<nav class="nav"><a href="../index.html">Home</a><a href="raytracing.html">Ray Tracing</a><a href="animation-lab.html">Animation Lab</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="physics.js"></script>
+</body>
+</html>

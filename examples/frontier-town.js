@@ -48,6 +48,24 @@ tog('tRays', (v) => (renderer.settings.godRays = v));
 tog('tShadows', (v) => (state.shadows = v)); state.shadows = true;
 tog('tLights', (v) => (env.lights = v));
 tog('tFog', (v) => (env.fogHeight = v ? 0.35 : 0));
+tog('tVol', (v) => (renderer.settings.volumetrics = v));
+state.wet = 0;
+// V3 rain: falling streaks around the camera, wet ground that builds up and dries off
+const DROPS = 1400, drops = new Float32Array(DROPS * 3), rainLines = new Float32Array(DROPS * 14);
+for (let i = 0; i < DROPS; i++) drops.set([(Math.random() - 0.5) * 30, Math.random() * 14, (Math.random() - 0.5) * 30], i * 3);
+function rain(dt, amount) {
+  if (amount <= 0.01) return null;
+  const c = camera.position, fall = 11, wind = 1.5;
+  for (let i = 0; i < DROPS; i++) {
+    const o = i * 3;
+    drops[o] += wind * dt; drops[o + 1] -= fall * dt;
+    if (drops[o + 1] < 0) { drops[o + 1] += 14; if (Math.random() < 0.02) particles.emit([c[0] + drops[o], 0.02, c[2] + drops[o + 2]], { count: 2, spread: 0.3, up: 0.8, size: 0.04, color: [0.75, 0.8, 0.85, 0.4], life: 0.3 }); }
+    if (drops[o] > 15) drops[o] -= 30;
+    const x = c[0] + drops[o], y = drops[o + 1], z = c[2] + drops[o + 2], a = 0.28 * amount;
+    rainLines.set([x, y, z, 0.72, 0.76, 0.82, a, x - wind * 0.035, y + fall * 0.035, z, 0.72, 0.76, 0.82, 0], i * 14);
+  }
+  return rainLines;
+}
 
 // footstep dust
 for (const ch of [cowboy, grinner]) ch.mixer.on((ev) => {
@@ -117,6 +135,18 @@ function frame(now) {
   // clock: `rate` real minutes per game day
   if (!state.paused && state.rate > 0) { state.hours = (state.hours + dt * 24 / (state.rate * 60)) % 24; $('tod').value = state.hours; }
   E.applyTimeOfDay(env, state.hours);
+  // weather: overcast light while it rains; puddles fill up over ~10 s and dry over ~40 s
+  const raining = $('tRain').checked;
+  state.wet = E.clamp(state.wet + (raining ? dt / 10 : -dt / 40), 0, 1);
+  const storm = raining ? 1 : 0;
+  env.wetness = state.wet; env.rain = storm;
+  if (state.wet > 0 || raining) {
+    const k = Math.max(storm, state.wet * 0.6);
+    env.sunIntensity *= 1 - 0.65 * k; env.godRays *= 1 - k;
+    env.fogColor = env.fogColor.map((v, i) => v * (1 - 0.4 * k) + [0.34, 0.36, 0.4][i] * 0.4 * k * (1 - env.night));
+    env.horizonColor = env.horizonColor.map((v, i) => v * (1 - 0.35 * k) + [0.45, 0.47, 0.52][i] * 0.35 * k * (1 - env.night));
+    env.fogDensity = 0.006 + 0.012 * k; env.volumeDensity = 0.03 + 0.04 * k; env.clouds = true;
+  } else { env.fogDensity = 0.006; env.volumeDensity = 0.03; }
   town.setNight(E.smoothstep(0.1, 0.7, env.night + (state.hours > 18.5 || state.hours < 6.5 ? 0.35 : 0)));
   // player input, camera-relative
   const k = state.keys;
@@ -151,7 +181,8 @@ function frame(now) {
   camera.position[1] = Math.max(0.4, camera.position[1]);
   E.vec3.copy(camera.target, target);
   env.shadowCenter = [cowboy.position[0], 1, cowboy.position[2]];
-  renderer.render(scene, camera, { background: 'sky', particles, shadows: state.shadows });
+  const rl = rain(dt, $('tRain').checked ? 1 : 0);
+  renderer.render(scene, camera, { background: 'sky', particles, shadows: state.shadows, lines: rl ? [{ data: rl }] : undefined });
   // HUD
   fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05; hudT += dt;
   if (hudT > 0.25) {

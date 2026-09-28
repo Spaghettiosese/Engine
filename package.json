@@ -1,12 +1,12 @@
 {
   "name": "shapeforge-engine",
-  "version": "2.0.0",
-  "description": "Zero-dependency WebGL2 3D model and animation engine with a Blender-style Studio, an animation Viewer, a fully rigged Cowboy, and V2 lighting, time of day and procedural buildings.",
+  "version": "3.0.0",
+  "description": "Zero-dependency WebGL2 3D model and animation engine with a Blender-style Studio, an animation Viewer, a fully rigged Cowboy, and V2 lighting, time of day and procedural buildings, a GPU path tracer, rigid-body physics with ragdolls, and a layered animation system with blend spaces and state machines.",
   "type": "module",
   "license": "MIT",
   "scripts": {
     "start": "npx --yes http-server -p 8080 -c-1 .",
-    "test": "node tools/test-geometry.mjs && node tools/test-animation.mjs && node tools/test-export.mjs && node tools/test-weapon.mjs && node tools/test-world.mjs && node tools/test-physics.mjs && node tools/test-ragdoll.mjs && node tools/test-anim3.mjs",
+    "test": "node tools/test-geometry.mjs && node tools/test-animation.mjs && node tools/test-export.mjs && node tools/test-weapon.mjs && node tools/test-world.mjs && node tools/test-physics.mjs && node tools/test-ragdoll.mjs && node tools/test-anim3.mjs && node tools/test-bvh.mjs",
     "build:assets": "node tools/build-assets.mjs",
     "build:artifact": "node tools/build-artifact.mjs"
   }

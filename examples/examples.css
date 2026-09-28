@@ -33,3 +33,9 @@ kbd { font: 11px ui-monospace, monospace; background: rgba(255,255,255,.08); bor
 :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 select, input[type=text] { font: inherit; font-size: 13px; background: rgba(255,255,255,.06); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; width: 100%; }
 @media (max-width: 720px) { .hud { max-width: calc(100% - 32px); } .stats { display: none; } .hide-sm { display: none; } }
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.seg .btn[aria-pressed=true] { background: var(--brass); color: #2a1407; border-color: transparent; font-weight: 600; }
+.sel { display: grid; grid-template-columns: 80px 1fr; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.split-line { position: fixed; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,.7); left: 50%; pointer-events: none; box-shadow: 0 0 8px rgba(0,0,0,.5); }
+.meter { height: 4px; background: rgba(255,255,255,.1); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.meter i { display: block; height: 100%; background: var(--brass); width: 0; }

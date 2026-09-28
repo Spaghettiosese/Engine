@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ray Tracing</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="examples.css">
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Path-traced gallery scene"></canvas>
+<div class="split-line" id="splitLine" hidden></div>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Ray Tracing</h1><small>ShapeForge V3 example · GPU path tracer</small></div></div>
+  <div class="card keys hide-sm">Drag to orbit · wheel to zoom · hold still and the image refines<br>In split view, the left half is the real-time renderer</div>
+  <div class="card" style="display:grid;gap:6px">
+    <div class="seg" role="group" aria-label="Mode"><button class="btn" data-mode="pt">Path traced</button><button class="btn" data-mode="split">Split</button><button class="btn" data-mode="raster">Real-time</button></div>
+    <div class="row"><label for="tod">Time</label><input id="tod" type="range" min="5" max="22" step="0.05" value="17.8"><output id="todOut"></output></div>
+    <div class="row"><label for="bounces">Bounces</label><input id="bounces" type="range" min="1" max="7" step="1" value="4"><output id="bouncesOut"></output></div>
+    <div class="row"><label for="aperture">Aperture</label><input id="aperture" type="range" min="0" max="0.15" step="0.005" value="0"><output id="apertureOut"></output></div>
+    <div class="row"><label for="focus">Focus</label><input id="focus" type="range" min="1" max="15" step="0.1" value="5.5"><output id="focusOut"></output></div>
+    <div class="sel"><label for="pose">Cowboy</label><select id="pose"><option value="Idle@1">Idle</option><option value="Wave@0.6">Waving</option><option value="Quickdraw@0.5">Quickdraw</option><option value="Tip Hat@0.75">Tipping his hat</option><option value="Jump Start@0.3">Jumping</option></select></div>
+    <div class="toggles"><label><input type="checkbox" id="tDenoise" checked> Denoise</label><label><input type="checkbox" id="tLamp" checked> Lantern</label><label><input type="checkbox" id="tNeon" checked> Neon sign</label><label><input type="checkbox" id="tHalf"> Half resolution</label></div>
+  </div>
+</div>
+<div class="stats card" id="stats"></div>
+<nav class="nav"><a href="../index.html">Home</a><a href="physics.html">Physics</a><a href="animation-lab.html">Animation Lab</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="raytracing.js"></script>
+</body>
+</html>

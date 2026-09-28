@@ -79,12 +79,13 @@
   <div class="fallback" id="fallback" hidden>Live preview needs WebGL2.</div>
   <div class="hero-copy">
     <h1 class="wordmark">Shape<span>Forge</span></h1>
-    <div><span class="v2">V2</span> <span style="color:var(--sand-2)">local lights, ambient occlusion, time of day, buildings</span></div>
+    <div><span class="v2">V3</span> <span style="color:var(--sand-2)">path tracing, physics and ragdolls, a layered animation system</span></div>
     <p class="lede">A 3D model and animation engine where every character is built from shapes, rigged to bones and set in motion.</p>
     <div class="ctas">
       <a class="cta primary" href="editor.html">Open the Studio</a>
       <a class="cta" href="viewer.html">Animation Viewer</a>
-      <a class="cta" href="examples/frontier-town.html">Play Frontier Town</a>
+      <a class="cta" href="examples/raytracing.html">See it path traced</a>
+      <a class="cta" href="examples/physics.html">Physics Playground</a>
     </div>
     <div class="now" aria-live="polite"><span>now playing <b id="nowClip">Idle</b></span><span>crossfade <b id="nowFade">phase-synced</b></span></div>
   </div>
@@ -98,6 +99,9 @@
       <ul>
         <li>WebGL2 renderer: PBR, soft PCF sun shadows, HDR bloom, ACES tone mapping, MSAA</li>
         <li>V2: 16 point and spot lights, SSAO, height fog, light shafts, instancing, frustum culling</li>
+        <li>V3: GPU path tracer, screen-space reflections, volumetric light, soft and contact shadows, rain</li>
+        <li>V3: rigid-body physics with joints, ragdolls and a character controller</li>
+        <li>V3: animation layers, blend spaces, state machines, look-at and foot IK</li>
         <li>21 procedural materials (plaid, denim, leather, brick, shingles, glass, corrugated tin…), bump-mapped in the shader</li>
         <li>12 parametric shapes and 12 non-destructive modifiers</li>
         <li>GPU skinning with automatic weights, spring bones, two-bone IK</li>
@@ -164,6 +168,25 @@
     </table>
   </div>
 
+  <h2>V3: ray tracing, physics and a real animation graph</h2>
+  <p class="sub">V3 adds a path tracer that runs on the same scenes as the real-time renderer, a physics engine with ragdolls, and the animation tools a game needs: layers, blend spaces, state machines and IK. The real-time renderer picked up reflections, volumetric light, soft shadows and weather.</p>
+  <ul class="features">
+    <li><b>GPU path tracer</b>A BVH over every triangle, GGX and glass, sun and lamps sampled directly, denoised while it converges</li>
+    <li><b>Reflections and volumetrics</b>Screen-space reflections, sun shafts through shadow, lamp halos and spot-light beams</li>
+    <li><b>Soft and contact shadows</b>PCSS penumbras that widen with distance, plus crisp screen-space contact shadows</li>
+    <li><b>Rain</b>Wet, glossy surfaces, puddles that mirror the street and ripples where the drops land</li>
+    <li><b>Rigid-body physics</b>Boxes, spheres, capsules, stacking, friction, sleeping, raycasts and impact events</li>
+    <li><b>Joints and ragdolls</b>Hinges, cones, ropes, springs and welds. Characters go limp when hit and blend back up</li>
+    <li><b>Animation graph</b>Masked and additive layers, 2D blend spaces, a state machine with triggers and exit times</li>
+    <li><b>Procedural motion</b>Foot IK on stairs, look-at, leaning into turns, spring hit reactions and tweens</li>
+  </ul>
+  <div class="gallery">
+    <a class="ex" href="examples/raytracing.html"><img src="examples/thumbs/raytracing.jpg" alt="A path-traced gallery with chrome spheres and a neon sign reflected in a polished floor" loading="lazy"><div><h3>Ray Tracing <span>Open ↗</span></h3><p>A golden-hour gallery, path traced on your GPU. Compare it side by side with the real-time renderer, add depth of field, and pose the Cowboy.</p></div></a>
+    <a class="ex" href="examples/physics.html"><img src="examples/thumbs/physics.jpg" alt="A wrecking ball on a chain swinging at a wall of boxes" loading="lazy"><div><h3>Physics Playground <span>Play ↗</span></h3><p>Towers, dominoes, a wrecking ball, a rope bridge, Newton's cradle and ragdoll Cowboys. Drag, shoot and blow things up.</p></div></a>
+    <a class="ex" href="examples/animation-lab.html"><img src="examples/thumbs/animation-lab.jpg" alt="The Cowboy waving while he walks, with live animation-weight panels" loading="lazy"><div><h3>Animation Lab <span>Play ↗</span></h3><p>Run, strafe and jump on a state machine. Wave or draw while walking, get hit, climb stairs with foot IK, and watch every weight live.</p></div></a>
+    <a class="ex" href="examples/frontier-town.html"><img src="examples/thumbs/frontier-rain.jpg" alt="The frontier town at night in the rain, lamps reflected in the wet street" loading="lazy"><div><h3>Frontier Town in the rain <span>Play ↗</span></h3><p>Switch on the rain: the street turns into a mirror of lamps and lit windows while the Grinner hunts.</p></div></a>
+  </div>
+
   <h2>V2: light, weather and buildings</h2>
   <p class="sub">Version 2 turns the character engine into a world engine. Scenes now have a clock, local lights, ambient occlusion and a kit for putting up whole towns, and the new examples show each part.</p>
   <ul class="features">
@@ -223,7 +246,7 @@ runLoop((dt) =&gt; {
   const canvas = document.getElementById('stage');
   const cowboy = createCowboy();
   const clips = [...cowboy.mixer.clips.values()];
-  const how = { Idle: 'Planted-feet IK, breathing, thumb hooked in belt', Walk: 'Gait synth: heel-strike → toe-off roll, 60% stance', Run: 'Gait synth: flight phase, 36% stance, forward lean', Crawl: 'Hands and knees, diagonal pairs, IK-planted palms' };
+  const how = { Idle: 'Planted-feet IK, breathing, thumb hooked in belt', Walk: 'Gait synth: heel-strike → toe-off roll, 60% stance', Run: 'Gait synth: flight phase, 36% stance, forward lean', Crawl: 'Hands and knees, diagonal pairs, IK-planted palms', 'Walk Back': 'Gait synth with heading 180°: toe-first steps', 'Strafe Left': 'Gait synth, heading 90°: lead foot steps out, trail foot follows, legs never cross', 'Strafe Right': 'Gait synth, heading −90°', 'Jump Start': 'Key poses + leg IK: crouch, arms back, heel lift, push-off', Fall: 'Looping air pose, legs cycling, arms out for balance', Land: 'Absorb through the knees and hips, back to standing', Wave: 'Upper-body layer: arm out, forearm swings, open hand', 'Tip Hat': 'Arm IK to the brim, a nod', Quickdraw: 'Hand to holster, draw, aim, recoil, blow the smoke away (bang event)', Flinch: 'Additive: frame 0 is the reference, the rest bends away from the hit' };
   document.getElementById('sParts').textContent = cowboy.parts.reduce((a, p) => a + p.meshes.length, 0);
   document.getElementById('sBones').textContent = cowboy.skeleton.length;
   document.getElementById('sTris').textContent = cowboy.triangleCount.toLocaleString();

@@ -20,6 +20,7 @@ export * from './architecture.js';
 export * from './physics.js';
 export * from './ragdoll.js';
 export * from './animgraph.js';
+export * from './pathtracer.js';
 
 // Minimal game loop helper: calls update(dt, time) then render every frame.
 export function runLoop(update) {

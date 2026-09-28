@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Animation Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="examples.css">
+<style>
+  .graph { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; }
+  .graph span { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-3); transition: background .15s, color .15s; }
+  .graph span.on { background: var(--brass); color: #2a1407; border-color: transparent; font-weight: 600; }
+  .graph i { color: var(--ink-3); font-style: normal; }
+  .bars { display: grid; grid-template-columns: 86px 1fr 34px; gap: 3px 8px; font-size: 12px; color: var(--ink-2); align-items: center; }
+  .bars b { height: 5px; background: rgba(255,255,255,.08); border-radius: 3px; overflow: hidden; display: block; }
+  .bars b i { display: block; height: 100%; background: var(--brass); width: 0; }
+  .bars output { font: 11px ui-monospace, monospace; text-align: right; color: var(--ink); }
+  .panel2 { position: fixed; right: 16px; top: calc(12px + env(safe-area-inset-top, 0px)); width: 250px; display: grid; gap: 8px; }
+  .panel2 h2 { margin: 0 0 4px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  @media (max-width: 720px) { .panel2 { display: none; } }
+</style>
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Animation lab: a playable Cowboy"></canvas>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Animation Lab</h1><small>ShapeForge V3 example · state machine, blend space, layers, IK</small></div></div>
+  <div class="card keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>F</kbd> strafe mode<br><kbd>1</kbd> wave · <kbd>2</kbd> tip hat · <kbd>3</kbd> quickdraw · <b>click</b> the Cowboy to hit him<br>drag to look around · wheel to zoom</div>
+  <div class="card" style="display:grid;gap:6px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" data-g="Wave">Wave</button><button class="btn" data-g="Tip Hat">Tip hat</button><button class="btn" data-g="Quickdraw">Quickdraw</button><button class="btn" id="hit">Hit him</button></div>
+    <div class="toggles">
+      <label><input type="checkbox" id="tStrafe"> Strafe mode</label>
+      <label><input type="checkbox" id="tFootIK" checked> Foot IK</label>
+      <label><input type="checkbox" id="tLook" checked> Look at lantern</label>
+      <label><input type="checkbox" id="tLean" checked> Lean into turns</label>
+      <label><input type="checkbox" id="tSlow"> Slow motion</label>
+      <label><input type="checkbox" id="tSkel"> Skeleton</label>
+    </div>
+  </div>
+</div>
+<div class="panel2">
+  <div class="card"><h2>State machine</h2><div class="graph" id="graph"></div></div>
+  <div class="card"><h2>Locomotion blend space</h2><div class="bars" id="blend"></div></div>
+  <div class="card"><h2>Layers and IK</h2><div class="bars" id="layers"></div></div>
+</div>
+<nav class="nav"><a href="../index.html">Home</a><a href="physics.html">Physics</a><a href="raytracing.html">Ray Tracing</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="animation-lab.js"></script>
+</body>
+</html>

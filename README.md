@@ -1,22 +1,75 @@
 # ShapeForge Engine
 
-A zero-dependency WebGL2 engine for building 3D characters out of parametric shapes, rigging them to skeletons and animating them. It comes with three front ends:
+A zero-dependency WebGL2 engine for building 3D characters out of parametric shapes, rigging them to skeletons and animating them, now with a GPU path tracer, a rigid-body physics engine and a layered animation system (V3). It comes with three front ends:
 
 | Page | What it is |
 | --- | --- |
 | `index.html` | Landing page with a live render of the Cowboy cycling through his clips |
 | `editor.html` | **ShapeForge Studio**, a Blender-style editor (layout, hotkeys, modes, dope sheet) |
 | `viewer.html` | **Animation Viewer**: crossfades, root motion, WASD play mode, onion skins, exports |
-| `examples/` | **V2 examples**: Frontier Town (playable), Lighting Lab, Architect, Hello Engine |
+| `examples/` | **Examples**: Frontier Town (playable, with rain), Ray Tracing, Physics Playground, Animation Lab, Lighting Lab, Architect, Hello Engine |
 
 Everything is plain ES modules. No build step, no npm dependencies.
 
 ```bash
 npm start          # serves the folder on http://localhost:8080 (any static server works)
-npm test           # geometry, animation, export, weapon and world checks (Node 18+)
+npm test           # geometry, animation, export, weapon, world, physics, ragdoll, animation-graph and BVH checks (Node 18+)
 ```
 
 ES modules don't load from `file://`, so open the pages through a local server.
+
+---
+
+## What's new in V3
+
+V3 adds ray tracing, physics and a full animation graph, and upgrades the real-time lighting.
+
+### Rendering
+
+| Feature | Details |
+| --- | --- |
+| Path tracer | `new PathTracer(renderer)`, then `pt.build(scene)` and `pt.render(scene, camera)` every frame. The scene is baked to world-space triangles (posed characters included), a SAH BVH is built on the CPU (about 77k triangles in 0.7 s) and traced on the GPU. It supports GGX specular, Lambert diffuse, glass, emissive surfaces, sun and lamp next-event estimation, sky light, Russian roulette and thin-lens depth of field. Samples accumulate while the camera is still, and an edge-aware à-trous filter cleans up the first frames. `split: 0.5` shows the rasterizer on the left. |
+| Screen-space reflections | Half-resolution ray march through the depth buffer with binary refinement. It replaces the assumed sky reflection wherever it finds a hit (`settings.ssr`, `ssrMaxRoughness`). |
+| Volumetric light | Raymarched height fog lit by the shadowed sun (shafts), lamps (halos) and spot lights (beams). Controlled by `env.volumetric`, `volumeDensity`, `sunShafts`, `lampGlow` and `anisotropy`. |
+| Soft and contact shadows | PCSS: blocker search, then a penumbra that widens with distance (`env.shadowSoftness`, the sun size in degrees). Screen-space contact shadows catch small details like feet on the floor. |
+| Weather | `env.wetness` darkens porous surfaces, makes everything glossy and fills puddles that mirror the scene. `env.rain` adds animated ripples. |
+| Post | Two wider bloom levels, colour grading (`saturation`, `contrast`, `temperature`), contrast-adaptive sharpening and subtle lens fringing. |
+| Performance | Opaque draws are sorted by material and state changes are skipped. `mesh.lods = [{ distance, geometry }]` gives meshes levels of detail. `settings.adaptiveResolution` holds a target frame rate, and the GPU timer reports `stats.gpuMs`. |
+
+### Physics (`physics.js`, `ragdoll.js`)
+
+```js
+const world = new E.PhysicsWorld();                                  // gravity, 10 iterations, 2 substeps
+world.add(new E.Body({ shape: new E.Plane() }));                     // static ground
+const crate = world.add(new E.Body({ shape: new E.Box([0.3, 0.3, 0.3]), position: [0, 3, 0], mass: 15, node: crateMesh }));
+world.add(new E.HingeJoint(null, door, [0, 1, 0], [0, 1, 0], { min: -1.5, max: 0 }));
+world.on('contact', (e) => { if (e.speed > 3) playThud(e.point); });
+const hit = world.raycast(origin, dir);                              // { body, point, normal, distance }
+runLoop((dt) => { world.step(dt); /* bodies with a node move it */ });
+```
+
+- The shapes are sphere, box, capsule and plane. A sweep-and-prune broadphase feeds SAT box manifolds with face clipping, and speculative contacts go to a sequential-impulse solver with warm starting, friction, restitution (fresh impacts only) and sleeping.
+- Joints: `BallJoint`, `HingeJoint` (limits and motor), `ConeTwistJoint`, `DistanceJoint` (rod, rope or spring), `FixedJoint` (breakable) and `DragJoint` (mouse grab).
+- `CharacterController`: a kinematic capsule that walks, jumps, slides along walls, steps up ledges, sticks to slopes and pushes crates.
+- `new Ragdoll(world, character)` builds 11 bodies and 10 limited joints along the skeleton. `activate({ impulse })` takes over from the current pose without popping, and `deactivate(0.8)` blends back into animation so the character gets up.
+
+### Animation (`animgraph.js`, layers in `animation.js`)
+
+- **Layers**: `mixer.addLayer('upper', { mask: boneMask(sk, ['spine']) })` plays a masked override on top of the base, and `{ additive: true }` layers a delta from a clip's first frame. `layer.playOnce('Wave')` fades itself in and out.
+- **Blend spaces**: `BlendSpace1D`, and `BlendSpace2D` (gradient-band weights, so any point layout works). Walk, run, walk back and both strafes stay phase-synced.
+- **State machine**: `AnimStateMachine` has clip or blend-space states, conditional transitions, exit times, `'*'` any-state transitions, triggers and enter/exit/update hooks.
+- **Procedural**: `LookAt` (distributed over spine, neck and head, clamped and eased), `FootIK` (plants the feet on stairs and slopes and drops the hips), `HitReaction` (spring wobble) and `Tweens` (easings, yoyo and repeat, sequences).
+- **Authoring**: `keyPoseClip(sk, name, frames)` builds clips from a few key poses, solving arm and leg IK at every sample. `synthesizeLocomotion` takes a `heading`, so it can generate backward and strafe cycles.
+- **New Cowboy clips**: Walk Back, Strafe Left, Strafe Right, Jump Start, Fall, Land, Wave, Tip Hat, Quickdraw and Flinch (additive).
+
+### V3 examples
+
+| Page | Shows |
+| --- | --- |
+| `examples/raytracing.html` | A gallery at golden hour, path traced: polished floor, chrome, gold and copper spheres, a neon sign, a glass window. It also has a split view against the rasterizer, depth of field and poses. |
+| `examples/physics.html` | Tower, pyramid, dominoes, a wrecking ball on a chain, a rope bridge, Newton's cradle and ragdoll Cowboys. Drag to throw, Space fires a cannonball, E sets off an explosion. |
+| `examples/animation-lab.html` | A playable Cowboy on the state machine and 2D blend space, with gesture and flinch layers, foot IK on stairs and a ramp, look-at, lean into turns, and live panels showing every weight. |
+| `examples/frontier-town.html` | Now with rain: wet streets that mirror the lamps, puddles with ripples, and volumetric lamp light. |
 
 ---
 
@@ -161,6 +214,10 @@ runLoop((dt) => {
 | `sky.js` | `applyTimeOfDay`, `sunDirection`, `isDark` |
 | `batch.js` | `batchStatic`: one mesh per material for static hierarchies |
 | `architecture.js` | `archPalette`, `Kit`, `building`, `wall`, `lettering`, props and structures |
+| `physics.js` | `PhysicsWorld`, `Body`, shapes, joints, `CharacterController`, raycasts, events |
+| `ragdoll.js` | `Ragdoll`, `HUMANOID_RAGDOLL` layout |
+| `animgraph.js` | `BlendSpace1D/2D`, `AnimStateMachine`, `LookAt`, `FootIK`, `HitReaction`, `Tweens` |
+| `pathtracer.js` | `PathTracer`, `bakeScene`, `buildBVH` |
 
 ### Blending locomotion from a speed value
 

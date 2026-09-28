@@ -269,7 +269,7 @@ function renderStatusRight(dt) {
   let v = 0, t = 0;
   for (const o of ed.allObjects()) if (o.kind !== 'armature') for (const m of ed.meshesOf(o)) { v += m.geometry.vertexCount; t += m.geometry.triangleCount; }
   const n = ed.allObjects().filter((o) => o.kind !== 'part').length;
-  $('statusRight').textContent = `${ed.active ? ed.objName(ed.active) + ' | ' : ''}Verts ${v.toLocaleString()} | Tris ${t.toLocaleString()} | Objects ${ed.selection.size}/${n} | ${Math.round(fps)} fps | ShapeForge 1.0`;
+  $('statusRight').textContent = `${ed.active ? ed.objName(ed.active) + ' | ' : ''}Verts ${v.toLocaleString()} | Tris ${t.toLocaleString()} | Objects ${ed.selection.size}/${n} | ${Math.round(fps)} fps | ShapeForge 3.0`;
 }
 function renderInfo() {
   const arm = ed.activeArmature, clip = ed.clipOf(arm);

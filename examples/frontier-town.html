@@ -10,7 +10,7 @@
 <body>
 <canvas class="stage" id="stage" aria-label="Frontier Town, playable third-person scene"></canvas>
 <div class="hud">
-  <div class="card title"><span class="mark">SF</span><div><h1>Frontier Town</h1><small>ShapeForge V2 example · third person</small></div></div>
+  <div class="card title"><span class="mark">SF</span><div><h1>Frontier Town</h1><small>ShapeForge example · third person · V3 weather and light</small></div></div>
   <div class="card keys hide-sm"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>C</kbd> crawl · drag to look · wheel to zoom<br><kbd>T</kbd> pause time · <kbd>[</kbd> <kbd>]</kbd> skip an hour</div>
   <div class="card" style="display:grid;gap:6px">
     <div class="row"><label for="tod">Time</label><input id="tod" type="range" min="0" max="24" step="0.05" value="17.6"><output id="todOut">17:36</output></div>
@@ -22,6 +22,8 @@
       <label><input type="checkbox" id="tLights" checked> Lamps</label>
       <label><input type="checkbox" id="tGrinner" checked> Grinner at night</label>
       <label><input type="checkbox" id="tFog" checked> Ground fog</label>
+      <label><input type="checkbox" id="tRain"> Rain (V3)</label>
+      <label><input type="checkbox" id="tVol" checked> Volumetric light</label>
     </div>
   </div>
   <div class="card keys" id="status" aria-live="polite">Dusk is coming. Something lives out past the church.</div>
