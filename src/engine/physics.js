@@ -79,6 +79,8 @@ export class Body {
     this.linearDamping = o.linearDamping ?? 0.02;
     this.angularDamping = o.angularDamping ?? 0.08;
     this.gravityScale = o.gravityScale ?? 1;
+    this.ccd = o.ccd ?? false;                    // sweep fast movers so they can't tunnel through thin walls
+    this.rollingFriction = o.rollingFriction ?? 0.02; // spheres and capsules slow down when rolling
     this.group = o.group ?? 1; this.mask = o.mask ?? 0xffff;
     this.isTrigger = !!o.isTrigger;
     this.allowSleep = o.allowSleep !== false;
@@ -601,6 +603,13 @@ export class PhysicsWorld {
       }
     }
     for (const c of rows) { c.ln = c.rows[0].lambda; c.lt1 = c.rows[1].lambda; c.lt2 = c.rows[2].lambda; }
+    // rolling resistance: round things lose spin about axes in the contact plane while pressed down
+    for (const c of rows) for (const b of [c.A, c.B]) {
+      if (!b.active || c.ln <= 0 || (b.shape.type !== 'sphere' && b.shape.type !== 'capsule')) continue;
+      const w = b.angularVelocity, n = c.normal, wn = dot(w, n), k = Math.max(0, 1 - b.rollingFriction * 60 * dt);
+      b.angularVelocity = add(scl(n, wn), scl(sub(w, scl(n, wn)), k));
+      b.velocity = add(scl(n, dot(b.velocity, n)), scl(sub(b.velocity, scl(n, dot(b.velocity, n))), 1 - b.rollingFriction * 0.5 * dt));
+    }
     for (const j of joints) {
       this._jointCache.set(j, j.rows.map((r) => r.lambda));
       if (j.breakForce < Infinity) { let f = 0; for (const r of j.rows) if (r.lin) f += r.lambda * r.lambda; if (Math.sqrt(f) / dt > j.breakForce) { j.broken = true; if (j.A && j.B) this._noCollide.delete(pairKey(j.A, j.B)); } }
@@ -610,6 +619,7 @@ export class PhysicsWorld {
     let awake = 0;
     for (const b of this.bodies) {
       if (b.type === 'static' || b.sleeping) continue;
+      if (b.ccd && b.type === 'dynamic') this._sweep(b, dt);
       b.position = madd(b.position, b.velocity, dt);
       const w = b.angularVelocity;
       if (w[0] || w[1] || w[2]) { const dq = qmul([w[0] * dt * 0.5, w[1] * dt * 0.5, w[2] * dt * 0.5, 0], b.quaternion); b.quaternion = qnorm([b.quaternion[0] + dq[0], b.quaternion[1] + dq[1], b.quaternion[2] + dq[2], b.quaternion[3] + dq[3]]); }
@@ -649,6 +659,27 @@ export class PhysicsWorld {
   overlapSphere(center, radius) {
     const probe = new Body({ shape: new Sphere(radius), position: center, type: 'kinematic' });
     return this.bodies.filter((b) => collide(b, probe).length);
+  }
+  // Continuous collision: if a body would travel further than its own size this step, cast
+  // ahead and stop it at the first surface (the contact solver takes over next step).
+  _sweep(b, dt) {
+    const v = b.velocity, dist = len(v) * dt, r = b.shape.boundingRadius;
+    if (dist < r * 0.5 || !isFinite(r)) return;
+    const dir = scl(v, 1 / (dist / dt)), ignore = new Set([b]);
+    const hit = this.raycast(b.position, dir, dist + r, { ignore, mask: b.mask });
+    if (!hit || hit.distance > dist + r) return;
+    const travel = Math.max(0, hit.distance - r * 0.95);
+    b.position = madd(b.position, dir, travel);
+    const vn = dot(v, hit.normal);
+    if (vn < 0) b.velocity = sub(v, scl(hit.normal, vn * (1 + Math.max(b.restitution, hit.body.restitution))));
+  }
+  // Hitscan shot: the first body along the ray takes an impulse at the hit point.
+  shoot(origin, dir, { range = 300, impulse = 8, mask = 0xffff, ignore = null } = {}) {
+    dir = norm(dir);
+    const hit = this.raycast(origin, dir, range, { mask, ignore });
+    if (hit && hit.body.isDynamic) hit.body.applyImpulse(scl(dir, impulse), hit.point);
+    if (hit) this._emit('contact', { a: hit.body, b: hit.body, point: hit.point, normal: hit.normal, speed: 0, impulse, shot: true });
+    return hit;
   }
   explode(center, radius, strength) {
     for (const b of this.bodies) {
@@ -789,4 +820,26 @@ export class CharacterController {
     return this;
   }
   get speed() { return Math.hypot(this.velocity[0], this.velocity[2]); }
+}
+
+// Break a box body into a grid of smaller boxes that fly apart from `point` (shattered
+// bottles, planks, crates). Returns the new bodies (already added); the original is removed.
+export function fracture(world, body, { pieces = [2, 2, 2], point = null, speed = 3, jitter = 0.25 } = {}) {
+  const s = body.shape, half = s.half || [s.radius, s.radius + (s.halfHeight || 0), s.radius];
+  const [nx, ny, nz] = pieces, out = [];
+  const h = [half[0] / nx, half[1] / ny, half[2] / nz];
+  const massEach = body.mass / (nx * ny * nz);
+  const from = point || body.position;
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+    const local = [-half[0] + h[0] * (2 * i + 1), -half[1] + h[1] * (2 * j + 1), -half[2] + h[2] * (2 * k + 1)];
+    const p = body.toWorld(local), away = norm(sub(p, from));
+    const rnd = () => (Math.random() - 0.5) * 2 * jitter;
+    const v = add(body.velocity, add(scl(away, speed * (0.6 + Math.random() * 0.8)), [rnd() * speed, Math.random() * speed * 0.6, rnd() * speed]));
+    const shrink = 0.9 - Math.random() * 0.25;
+    const piece = new Body({ shape: new Box(h.map((x) => x * shrink)), position: p, rotation: body.quaternion, velocity: v, angularVelocity: [rnd() * 12, rnd() * 12, rnd() * 12], mass: Math.max(0.01, massEach), friction: body.friction, restitution: 0.2, group: body.group, name: body.name + ' piece' });
+    piece.userData = { ...body.userData, fragment: true };
+    world.add(piece); out.push(piece);
+  }
+  world.remove(body);
+  return out;
 }

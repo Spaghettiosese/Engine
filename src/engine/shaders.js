@@ -117,6 +117,7 @@ uniform sampler2D uAO; uniform bool uUseAO; uniform vec2 uScreen; uniform float 
 uniform float uFogHeight;             // height falloff (0 = uniform fog)
 // V3: soft (PCSS) and contact shadows
 uniform sampler2D uShadowRaw; uniform float uShadowSoft;  // penumbra scale (0 = plain PCF)
+uniform sampler2DShadow uShadowMap2; uniform mat4 uShadowVP2; uniform bool uCascade; uniform float uShadowTexel2; // far cascade
 uniform sampler2D uGBuf; uniform bool uContact; uniform mat4 uView; uniform mat4 uProj;
 out vec4 outColor;
 ${NOISE}
@@ -329,10 +330,28 @@ vec3 perturb(vec3 N, vec3 p, float h, float strength){
   return normalize(abs(det)*N - strength*grad);
 }
 
+float farShadow(vec3 N){
+  vec4 sp = uShadowVP2 * vec4(vWorld + N*0.08, 1.0);
+  vec3 sc = sp.xyz / sp.w * 0.5 + 0.5;
+  if(sc.x<0.0||sc.x>1.0||sc.y<0.0||sc.y>1.0||sc.z>1.0) return 1.0;
+  float bias = 0.0006 + 0.0012*(1.0-max(dot(N,uSunDir),0.0)), s = 0.0;
+  for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++) s += texture(uShadowMap2, vec3(sc.xy + vec2(x,y)*uShadowTexel2*1.2, sc.z - bias));
+  return s/9.0;
+}
+float nearShadow(vec3 N);
 float shadowFactor(vec3 N){
   if(!uShadows) return 1.0;
   vec3 sc = vShadow.xyz / vShadow.w * 0.5 + 0.5;
-  if(sc.x<0.0||sc.x>1.0||sc.y<0.0||sc.y>1.0||sc.z>1.0) return 1.0;
+  bool inNear = !(sc.x<0.0||sc.x>1.0||sc.y<0.0||sc.y>1.0||sc.z>1.0);
+  if(!uCascade) return inNear ? nearShadow(N) : 1.0;
+  if(!inNear) return farShadow(N);
+  // blend into the far cascade near the edge of the near map
+  float edge = min(min(sc.x, 1.0-sc.x), min(sc.y, 1.0-sc.y));
+  float k = smoothstep(0.0, 0.1, edge);
+  return k >= 1.0 ? nearShadow(N) : mix(farShadow(N), nearShadow(N), k);
+}
+float nearShadow(vec3 N){
+  vec3 sc = vShadow.xyz / vShadow.w * 0.5 + 0.5;
   float bias = 0.0008 + 0.0015*(1.0-max(dot(N,uSunDir),0.0));
   float ang = hash12(gl_FragCoord.xy)*6.2831;
   mat2 R = mat2(cos(ang),sin(ang),-sin(ang),cos(ang));
@@ -898,4 +917,31 @@ void main(){
   }
   if(uUseVol) c += texture(uVol, vUV).rgb;
   outColor = vec4(c, 1.0);
+}`;
+
+
+// V3.1 depth of field: gather over a golden-angle disc whose radius follows each pixel's
+// circle of confusion; blurry background never bleeds over a sharp foreground.
+export const DOF_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uColor; uniform sampler2D uG; uniform vec2 uRes;
+uniform float uFocus; uniform float uAperture; uniform float uMaxBlur;
+out vec4 outColor;
+float depthAt(vec2 uv){ float d = texture(uG, uv).w; return d > 0.0 ? d : 1000.0; }
+float coc(float d){ return clamp(abs(d - uFocus) / max(d, 0.1) * uAperture * uRes.y * 0.02, 0.0, uMaxBlur); }
+void main(){
+  float d0 = depthAt(vUV), c0 = coc(d0);
+  vec3 sum = texture(uColor, vUV).rgb; float wsum = 1.0;
+  if(uMaxBlur > 0.5){
+    for(int i = 0; i < 40; i++){
+      float r = sqrt((float(i) + 0.5) / 40.0) * uMaxBlur, a = float(i) * 2.39996;
+      vec2 uv = vUV + vec2(cos(a), sin(a)) * r / uRes;
+      float d = depthAt(uv), c = coc(d);
+      float w = smoothstep(r - 1.0, r + 1.0, c);
+      if(d > d0) w *= smoothstep(r - 1.0, r + 1.0, c0); // background can't spill over what's in front
+      sum += texture(uColor, uv).rgb * w; wsum += w;
+    }
+  }
+  outColor = vec4(sum / wsum, 1.0);
 }`;

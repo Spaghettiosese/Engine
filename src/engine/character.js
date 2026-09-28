@@ -105,6 +105,28 @@ export class Character extends Node {
     this.updateWorld(this.parent ? this.parent.world : null);
     if (this.autoAnimate) this.mixer.update(dt);
     if (this.springs) this.skeleton.simulateSprings(dt, this.world);
+    this.updateSockets();
+  }
+  // Sockets: attach props (a revolver, a hat, a torch) to a bone. The node becomes a child
+  // of the character and follows the bone with a fixed offset. Re-attaching moves it, e.g.
+  // from the holster to the hand. Call updateSockets() again after IK changes the pose.
+  attach(node, bone, { position = [0, 0, 0], rotation = [0, 0, 0] } = {}) {
+    this.sockets = (this.sockets || []).filter((s) => s.node !== node);
+    const i = this.skeleton.boneIndex(bone);
+    if (i < 0) throw new Error('No bone named ' + bone);
+    this.sockets.push({ node, bone: i, offset: mat4.fromRTS(mat4.create(), quat.fromEuler(quat.create(), rotation[0], rotation[1], rotation[2]), position) });
+    if (node.parent !== this) this.add(node);
+    this.updateSockets();
+    return node;
+  }
+  detach(node) { this.sockets = (this.sockets || []).filter((s) => s.node !== node); this.remove(node); }
+  updateSockets() {
+    if (!this.sockets) return;
+    const m = mat4.create();
+    for (const s of this.sockets) {
+      mat4.multiply(m, this.skeleton.world.subarray(s.bone * 16, s.bone * 16 + 16), s.offset);
+      mat4.getTranslation(s.node.position, m); mat4.getRotation(s.node.rotation, m);
+    }
   }
   get triangleCount() { let t = 0; for (const p of this.parts) for (const m of p.meshes) t += m.geometry.triangleCount; return t; }
   toJSON() {

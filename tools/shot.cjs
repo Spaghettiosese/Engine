@@ -8,9 +8,10 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
   page.on('console', (m) => logs.push(m.type() + ': ' + m.text()));
   page.on('pageerror', (e) => logs.push('PAGEERROR: ' + e.message));
   await page.goto(url);
+  page.setDefaultTimeout(180000);
   await page.waitForTimeout(+wait);
   if (js) { await page.evaluate(js); await page.waitForTimeout(1500); }
-  await page.screenshot({ path: out, ...(/\.jpe?g$/.test(out) ? { quality: 80 } : {}) });
+  await page.screenshot({ path: out, timeout: 150000, ...(/\.jpe?g$/.test(out) ? { quality: 80 } : {}) });
   console.log(logs.slice(0, 30).join('\n'));
   await browser.close();
 })();

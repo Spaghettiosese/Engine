@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Showdown</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Rye&display=swap">
+<link rel="stylesheet" href="examples.css">
+<style>
+  body { cursor: default; }
+  .xhair { position: fixed; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); pointer-events: none; opacity: .9; transition: width .08s, height .08s; }
+  .xhair i { position: absolute; background: #fff; box-shadow: 0 0 2px rgba(0,0,0,.9); }
+  .xhair i:nth-child(1) { left: 50%; top: 0; width: 2px; height: 30%; margin-left: -1px; }
+  .xhair i:nth-child(2) { left: 50%; bottom: 0; width: 2px; height: 30%; margin-left: -1px; }
+  .xhair i:nth-child(3) { top: 50%; left: 0; height: 2px; width: 30%; margin-top: -1px; }
+  .xhair i:nth-child(4) { top: 50%; right: 0; height: 2px; width: 30%; margin-top: -1px; }
+  .xhair b { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: #fff; border-radius: 50%; }
+  .hitmark { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%) rotate(45deg); pointer-events: none; opacity: 0; transition: opacity .25s; }
+  .hitmark i { position: absolute; background: #fff; }
+  .hitmark i:nth-child(1) { left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; }
+  .hitmark i:nth-child(2) { top: 50%; left: 0; right: 0; height: 2px; margin-top: -1px; }
+  .hitmark.kill i { background: #ff4a36; }
+  .hitmark i::after { content: ''; }
+  .bar { position: fixed; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); left: 22px; display: grid; gap: 6px; min-width: 220px; }
+  .hp { height: 10px; background: rgba(0,0,0,.45); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .hp i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #c4552e, #e2a84e); transition: width .2s; }
+  .ammo { position: fixed; right: 26px; bottom: calc(26px + env(safe-area-inset-bottom, 0px)); width: 92px; height: 92px; border-radius: 50%; background: rgba(24,19,16,.72); border: 1px solid var(--line); }
+  .ammo i { position: absolute; width: 22px; height: 22px; border-radius: 50%; left: 35px; top: 35px; background: #d8ab45; box-shadow: inset 0 0 0 3px #8a6420; transition: background .15s, box-shadow .15s; }
+  .ammo i.spent { background: #1a1512; box-shadow: inset 0 0 0 3px #3a2e24; }
+  .ammo b { position: absolute; inset: 38px; border-radius: 50%; background: #2a211b; }
+  .top { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; font: 600 16px 'Barlow Semi Condensed', sans-serif; }
+  .top .card { padding: 6px 14px; }
+  .top b { font: 400 22px Rye, Georgia, serif; color: var(--brass); font-weight: 400; }
+  .feed { position: fixed; right: 22px; top: calc(14px + env(safe-area-inset-top, 0px)); display: grid; gap: 4px; justify-items: end; font-size: 14px; pointer-events: none; }
+  .feed div { background: rgba(24,19,16,.7); padding: 3px 10px; border-radius: 6px; animation: fade 3s forwards; }
+  @keyframes fade { 0%, 70% { opacity: 1 } 100% { opacity: 0 } }
+  .menu { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, rgba(21,16,13,.55), rgba(21,16,13,.85)); z-index: 5; padding: 16px; }
+  .menu .box { max-width: 560px; width: 100%; display: grid; gap: 14px; text-align: center; }
+  .menu h1 { font: 400 clamp(40px, 8vw, 72px) Rye, Georgia, serif; margin: 0; color: #f4e4c8; text-shadow: 0 4px 24px rgba(0,0,0,.6); }
+  .menu p { margin: 0; color: var(--ink-2); font-size: 17px; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mode { text-align: left; padding: 14px 16px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: inherit; display: grid; gap: 4px; }
+  .mode:hover, .mode:focus-visible { border-color: var(--brass); }
+  .mode b { font: 400 22px Rye, Georgia, serif; font-weight: 400; color: var(--brass); }
+  .mode span { color: var(--ink-2); font-size: 14px; }
+  .controls { font-size: 14px; color: var(--ink-2); line-height: 1.8; }
+  .vignette-red { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 160px 40px rgba(170, 20, 10, 0); transition: box-shadow .3s; }
+  @media (max-width: 600px) { .modes { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Showdown: a third-person shooting game"></canvas>
+<div class="vignette-red" id="hurt"></div>
+<div class="xhair" id="xhair" hidden><i></i><i></i><i></i><i></i><b></b></div>
+<div class="hitmark" id="hitmark"><i></i><i></i></div>
+<div class="top" id="top" hidden><div class="card">Score <b id="score">0</b></div><div class="card" id="goal"></div></div>
+<div class="feed" id="feed"></div>
+<div class="bar" id="bar" hidden><div class="card keys" id="hint">Right mouse or <kbd>Q</kbd> aim · click fire · <kbd>R</kbd> reload</div><div class="hp"><i id="hp"></i></div></div>
+<div class="ammo" id="ammo" hidden><b></b></div>
+<div class="banner" id="banner" hidden></div>
+<div class="flash" id="flash"></div>
+<div class="menu" id="menu">
+  <div class="box">
+    <h1>Showdown</h1>
+    <p id="menuText">You're the Sheriff. Your Colt holds six rounds.</p>
+    <div class="modes">
+      <button class="mode" data-mode="range"><b>Target Practice</b><span>60 seconds at the range: bottles, cans and swinging steel plates.</span></button>
+      <button class="mode" data-mode="outlaws"><b>Outlaw Showdown</b><span>Three waves of outlaws ride into town. They shoot back.</span></button>
+    </div>
+    <div class="controls"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · mouse look · <b>right mouse</b> or <kbd>Q</kbd> aim · <b>left click</b> fire · <kbd>R</kbd> reload · <kbd>Esc</kbd> pause</div>
+  </div>
+</div>
+<nav class="nav"><a href="../index.html">Home</a><a href="physics.html">Physics</a><a href="frontier-town.html">Frontier Town</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="shootout.js"></script>
+</body>
+</html>

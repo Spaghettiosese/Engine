@@ -82,4 +82,42 @@ export function flinchClip(sk) {
   ]);
 }
 
-export function v3Moves(sk) { return [...directionalWalks(sk), ...jumpClips(sk), ...gestureClips(sk), flinchClip(sk)]; }
+// Revolver handling for the Sheriff (upper-body layer clips). The gun rides a socket that
+// moves from the holster to the hand on the 'grab' event and back on 'release'.
+export function revolverClips(sk) {
+  const AIM = { target: [-0.17, 1.4, 0.56], pole: [-0.5, -1, -0.2], handRot: [-90, 0, 0] };
+  const GRIP = { target: [-0.215, 1.03, 0.035], pole: [-1, 0.2, -0.6], handRot: [0, 0, -8] };
+  const aimBones = { chest: [0, -12, 0], neck: [0, 12, 0], spine: [2, -4, 0], 'upperArm.L': [4, 0, 10], 'foreArm.L': [-18, 0, 0] };
+  const draw = keyPoseClip(sk, 'Draw Revolver', [
+    { t: 0, ...STAND },
+    { t: 0.16, arms: { R: GRIP }, hands: { R: 'gunGrip' }, bones: { chest: [4, -4, 0] } },
+    { t: 0.24, arms: { R: { ...GRIP, target: [-0.2, 1.08, 0.08] } } },
+    { t: 0.46, arms: { R: AIM }, bones: aimBones },
+  ], { events: [{ t: 0.2, name: 'grab', side: 'R' }] });
+  const aim = keyPoseClip(sk, 'Aim Revolver', [
+    { t: 0, ...STAND, arms: { L: null, R: AIM }, hands: { L: 'relaxed', R: 'gunGrip' }, bones: { ...STAND.bones, ...aimBones } },
+    { t: 1, arms: { R: { ...AIM, target: [-0.17, 1.405, 0.56] } }, bones: { chest: [0.6, -12, 0] } },
+    { t: 2, arms: { R: AIM }, bones: { chest: [0, -12, 0] } },
+  ], { loop: true });
+  const recoil = keyPoseClip(sk, 'Revolver Recoil', [
+    { t: 0, ...STAND, arms: { R: AIM }, hands: { R: 'gunGrip' }, bones: { ...STAND.bones, ...aimBones } },
+    { t: 0.04, arms: { R: { ...AIM, target: [-0.17, 1.47, 0.5], handRot: [-128, 0, 0] } }, bones: { chest: [-3, -12, 0], neck: [-3, 12, 0] } },
+    { t: 0.35, arms: { R: AIM }, bones: aimBones },
+  ]);
+  const LOAD = { target: [-0.06, 1.17, 0.3], pole: [-1, -0.8, 0], handRot: [-50, 50, -35] };
+  const reload = [];
+  reload.push({ t: 0, ...STAND, arms: { R: AIM }, hands: { R: 'gunGrip', L: 'relaxed' }, bones: { ...STAND.bones, ...aimBones } });
+  reload.push({ t: 0.3, arms: { R: LOAD, L: { target: [0.02, 1.16, 0.3], pole: [1, -0.6, 0], handRot: [-60, -30, 50] } }, hands: { L: { curl: [0.5, 0.35, 0.6, 0.7, 0.75], spread: 0 } }, bones: { chest: [8, -6, 0], neck: [18, 6, 0], head: [10, 0, 0] } });
+  for (let k = 0; k < 4; k++) reload.push({ t: 0.5 + k * 0.28, arms: { L: { target: [0.035 - (k % 2) * 0.03, 1.2 + (k % 2) * 0.03, 0.3], pole: [1, -0.6, 0], handRot: [-60, -30, 50] } } });
+  reload.push({ t: 1.75, arms: { L: null }, hands: { L: 'relaxed' } });
+  reload.push({ t: 2.1, arms: { R: AIM }, bones: { ...aimBones, neck: [0, 12, 0], head: [0, 0, 0] } });
+  const holster = keyPoseClip(sk, 'Holster Revolver', [
+    { t: 0, ...STAND, arms: { R: AIM }, hands: { R: 'gunGrip' }, bones: { ...STAND.bones, ...aimBones } },
+    { t: 0.3, arms: { R: { ...GRIP, target: [-0.2, 1.08, 0.08] } }, bones: { chest: [4, -4, 0], neck: [0, 0, 0] } },
+    { t: 0.42, arms: { R: GRIP } },
+    { t: 0.7, ...STAND },
+  ], { events: [{ t: 0.44, name: 'release', side: 'R' }] });
+  return [draw, aim, recoil, keyPoseClip(sk, 'Reload Revolver', reload, { events: [0.5, 0.7, 0.9, 1.1, 1.3, 1.5].map((t) => ({ t, name: 'load' })) }), holster];
+}
+
+export function v3Moves(sk) { return [...directionalWalks(sk), ...jumpClips(sk), ...gestureClips(sk), flinchClip(sk), ...revolverClips(sk)]; }

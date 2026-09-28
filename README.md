@@ -20,6 +20,15 @@ ES modules don't load from `file://`, so open the pages through a local server.
 
 ---
 
+## What's new in V3.1
+
+- **Showdown** (`examples/shootout.html`): a third-person shooter. **Target Practice** gives you 60 seconds of bottles that shatter, cans that fly and steel plates that swing on hinges. **Outlaw Showdown** is three waves of outlaws who advance, take aim and shoot back. The game has pointer-lock mouse look with a drag fallback, an over-the-shoulder aim camera with depth of field, a revolver-cylinder ammo display, hit markers and slow motion on the last kill of a wave.
+- **The Sheriff's revolver** (`src/content/revolver.js`): a Colt Single Action Army built from shapes. Its cylinder turns and its hammer cocks with every shot. New clips: Draw, Aim, Recoil (additive), Reload and Holster Revolver.
+- **Bone sockets**: `character.attach(node, 'hand.R', { position, rotation })` pins a prop to a bone, and attaching again moves it (holster to hand on the draw clip's `grab` event).
+- **AimIK**: turns the spine, chest and arm so the barrel, not the wrist, lines up with the target (within about 0.05° in tests).
+- **Physics**: continuous collision (`ccd: true`) for fast bodies, rolling friction, `world.shoot()` hitscan with impulse, and `fracture(world, body)` to shatter a box into flying pieces.
+- **Graphics**: a second shadow cascade so distant buildings keep their shadows, real-time depth of field (`settings.dofAperture`, `dofFocus`), and `Decals` for bullet holes.
+
 ## What's new in V3
 
 V3 adds ray tracing, physics and a full animation graph, and upgrades the real-time lighting.

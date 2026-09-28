@@ -90,6 +90,33 @@ const ground = (w) => w.add(new P.Body({ shape: new P.Plane([0, 1, 0], 0) }));
   const t0 = performance.now(); run(w, 2); const ms = (performance.now() - t0) / 120;
   check('300 bodies', ms < 16, `${ms.toFixed(2)} ms per frame, ${w.stats.contacts} contacts, ${w.stats.awake} awake`);
 }
+{ // CCD: a fast pellet doesn't tunnel through a 4 cm wall
+  const res = [];
+  for (const ccd of [false, true]) {
+    const w = new P.PhysicsWorld({ gravity: [0, 0, 0] });
+    w.add(new P.Body({ shape: new P.Box([1, 1, 0.02]), type: 'static', position: [0, 0, 2] }));
+    const b = w.add(new P.Body({ shape: new P.Sphere(0.03), position: [0, 0, 0], velocity: [0, 0, 150], mass: 0.05, ccd }));
+    run(w, 0.3); res.push(b.position[2]);
+  }
+  check('continuous collision', res[0] > 2.5 && res[1] < 2, `without CCD z ${res[0].toFixed(1)} (tunnelled), with CCD z ${res[1].toFixed(2)}`);
+}
+{ // rolling friction: a rolling ball comes to rest instead of rolling forever
+  const w = new P.PhysicsWorld(); ground(w);
+  const b = w.add(new P.Body({ shape: new P.Sphere(0.2), position: [0, 0.2, 0], velocity: [3, 0, 0], angularVelocity: [0, 0, -15], linearDamping: 0, angularDamping: 0, rollingFriction: 0.05 }));
+  run(w, 8);
+  check('rolling friction', P.physicsMath.len(b.velocity) < 0.05 && b.position[0] > 1, `rolled ${b.position[0].toFixed(1)} m then stopped (speed ${P.physicsMath.len(b.velocity).toFixed(3)})`);
+}
+{ // shooting and fracture
+  const w = new P.PhysicsWorld(); ground(w);
+  const can = w.add(new P.Body({ shape: new P.Box([0.04, 0.06, 0.04]), position: [0, 0.06, 5], mass: 0.1 }));
+  run(w, 0.5);
+  const hit = w.shoot([0, 0.06, 0], [0, 0, 1], { impulse: 0.8 });
+  const bottle = w.add(new P.Body({ shape: new P.Box([0.04, 0.12, 0.04]), position: [1, 0.12, 5], mass: 0.4 }));
+  const shards = P.fracture(w, bottle, { pieces: [2, 3, 2], point: [1, 0.12, 4.96] });
+  run(w, 0.4);
+  const flew = shards.filter((s) => s.position[2] > 5.05).length;
+  check('shoot + fracture', hit && hit.body === can && can.velocity[2] > 3 && shards.length === 12 && !w.bodies.includes(bottle) && flew > 6, `can knocked away at ${can.velocity[2].toFixed(1)} m/s, bottle broke into ${shards.length} shards, ${flew} blown back`);
+}
 let fail = 0;
 for (const [name, ok, info] of results) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${info ? ' — ' + info : ''}`); if (!ok) fail++; }
 if (fail) process.exit(1);

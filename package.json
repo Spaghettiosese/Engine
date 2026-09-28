@@ -1,6 +1,6 @@
 {
   "name": "shapeforge-engine",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Zero-dependency WebGL2 3D model and animation engine with a Blender-style Studio, an animation Viewer, a fully rigged Cowboy, and V2 lighting, time of day and procedural buildings, a GPU path tracer, rigid-body physics with ragdolls, and a layered animation system with blend spaces and state machines.",
   "type": "module",
   "license": "MIT",

@@ -66,6 +66,8 @@ export class Renderer {
       ssr: true, ssrStrength: 1, ssrMaxRoughness: 0.5, volumetrics: true, contactShadows: true, softShadows: true,
       saturation: 1.06, contrast: 1.04, temperature: 0, sharpen: 0.18, aberration: 0.35,
       renderScale: 1, adaptiveResolution: false, targetFps: 55, minScale: 0.5, sortDraws: true,
+      // V3.1: depth of field (aperture 0 = off), shadow cascades
+      dofFocus: 8, dofAperture: 0, dofMaxBlur: 12, shadowCascades: true,
     };
     const P = (vs, fs) => new Program(gl, vs, fs);
     this.prog = {
@@ -85,6 +87,7 @@ export class Renderer {
       volume: P(S.FULLSCREEN_VS, S.VOLUME_FS),
       bilateral: P(S.FULLSCREEN_VS, S.BILATERAL_FS),
       composite: P(S.FULLSCREEN_VS, S.COMPOSITE_FS),
+      dof: P(S.FULLSCREEN_VS, S.DOF_FS),
     };
     // raw-depth sampler for PCSS blocker search on the (comparison) shadow map
     this.rawSampler = gl.createSampler();
@@ -127,8 +130,16 @@ export class Renderer {
   // ------------------------------------------------------------------ targets
   _initShadow() {
     const gl = this.gl, s = this.shadowSize;
-    this.shadowTex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+    [this.shadowTex, this.shadowFBO] = this._shadowTarget(s);
+    // V3.1 far cascade: a wider, coarser map so distant buildings still cast shadows
+    [this.shadowTex2, this.shadowFBO2] = this._shadowTarget(Math.max(1024, s >> 1));
+    this.shadowSize2 = Math.max(1024, s >> 1);
+    this.shadowVP2 = mat4.create();
+  }
+  _shadowTarget(s) {
+    const gl = this.gl;
+    const shadowTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, shadowTex);
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT32F, s, s);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -136,10 +147,11 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
-    this.shadowFBO = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFBO);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.shadowTex, 0);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTex, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return [shadowTex, fbo];
   }
   _tex(w, h, fmt) {
     const gl = this.gl, t = gl.createTexture();
@@ -159,9 +171,9 @@ export class Renderer {
     if (w === this.width && h === this.height) return;
     this.width = w; this.height = h; c.width = w; c.height = h;
     const fmt = this.hdr ? gl.RGBA16F : gl.RGBA8;
-    for (const k of ['msFBO', 'resolveFBO', 'pickFBO', 'b1FBO', 'b2FBO', 'gFBO', 'ao1FBO', 'ao2FBO', 'compFBO', 'ssr1FBO', 'ssr2FBO', 'vol1FBO', 'vol2FBO', 'c1FBO', 'c2FBO', 'd1FBO', 'd2FBO']) if (this[k]) gl.deleteFramebuffer(this[k]);
+    for (const k of ['msFBO', 'resolveFBO', 'pickFBO', 'b1FBO', 'b2FBO', 'gFBO', 'ao1FBO', 'ao2FBO', 'compFBO', 'dofFBO', 'ssr1FBO', 'ssr2FBO', 'vol1FBO', 'vol2FBO', 'c1FBO', 'c2FBO', 'd1FBO', 'd2FBO']) if (this[k]) gl.deleteFramebuffer(this[k]);
     for (const k of ['msColor', 'msDepth', 'pickDepth', 'gDepth']) if (this[k]) gl.deleteRenderbuffer(this[k]);
-    for (const k of ['resolveTex', 'pickTex', 'b1Tex', 'b2Tex', 'gTex', 'gMatTex', 'ao1Tex', 'ao2Tex', 'compTex', 'ssr1Tex', 'ssr2Tex', 'vol1Tex', 'vol2Tex', 'c1Tex', 'c2Tex', 'd1Tex', 'd2Tex']) if (this[k]) gl.deleteTexture(this[k]);
+    for (const k of ['resolveTex', 'pickTex', 'b1Tex', 'b2Tex', 'gTex', 'gMatTex', 'ao1Tex', 'ao2Tex', 'compTex', 'dofTex', 'ssr1Tex', 'ssr2Tex', 'vol1Tex', 'vol2Tex', 'c1Tex', 'c2Tex', 'd1Tex', 'd2Tex']) if (this[k]) gl.deleteTexture(this[k]);
     // half-resolution normal+depth buffer and AO targets (V2 ambient occlusion)
     const gw = Math.max(1, w >> 1), gh = Math.max(1, h >> 1);
     this.gw = gw; this.gh = gh;
@@ -191,6 +203,7 @@ export class Renderer {
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.msDepth);
     this.resolveTex = this._tex(w, h, fmt); this.resolveFBO = this._fbo(this.resolveTex);
     this.compTex = this._tex(w, h, fmt); this.compFBO = this._fbo(this.compTex);
+    this.dofTex = this._tex(w, h, fmt); this.dofFBO = this._fbo(this.dofTex);
     const bw = Math.max(1, w >> 2), bh = Math.max(1, h >> 2);
     this.bw = bw; this.bh = bh;
     this.b1Tex = this._tex(bw, bh, fmt); this.b1FBO = this._fbo(this.b1Tex);
@@ -388,14 +401,14 @@ export class Renderer {
     p.i('uPattern', m.patternIndex); p.f('uPatternScale', m.patternScale); p.v3('uPatternColor', c.pat); p.f('uPatternStrength', m.patternStrength);
     p.f('uBump', m.bump); p.f('uSheen', m.sheen); p.i('uDoubleSided', m.doubleSided ? 1 : 0); p.f('uOpacity', m.opacity);
   }
-  _computeShadowVP(env) {
-    const L = env.sunDirection, c = env.shadowCenter, r = env.shadowRadius;
+  _computeShadowVP(env, r = env.shadowRadius, out = this.shadowVP, size = this.shadowSize) {
+    const L = env.sunDirection, c = env.shadowCenter;
     const view = mat4.lookAt(mat4.create(), [c[0] + L[0] * r * 3, c[1] + L[1] * r * 3, c[2] + L[2] * r * 3], c, Math.abs(L[1]) > 0.99 ? [0, 0, 1] : [0, 1, 0]);
     // snap to texel grid (prevents shimmering while the camera/character moves)
-    const texel = (2 * r) / this.shadowSize;
+    const texel = (2 * r) / size;
     view[12] = Math.round(view[12] / texel) * texel; view[13] = Math.round(view[13] / texel) * texel;
     const proj = mat4.ortho(mat4.create(), -r, r, -r, r, 0.1, r * 6);
-    mat4.multiply(this.shadowVP, proj, view);
+    mat4.multiply(out, proj, view);
     return texel;
   }
 
@@ -418,24 +431,36 @@ export class Renderer {
     const shadows = lit && o.shadows !== false && shading !== 'material';
 
     // shadow pass
+    const cascade = shadows && this.settings.shadowCascades !== false && env.shadowFar !== 0;
     if (shadows) {
+      const pass = (fbo, size, vp, radius) => {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.viewport(0, 0, size, size);
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+        gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+        gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 3.0);
+        const p = this.prog.depth.use();
+        p.m4('uViewProj', vp); p.m4('uShadowVP', vp); p.f('uInflate', 0);
+        const sc = env.shadowCenter, sr = radius * 1.8;
+        for (const m of meshes) {
+          if (!m.castShadow || (m.material && m.material.opacity < 0.5)) continue;
+          if (this.settings.culling) { const s = this._sphere(m); if (vec3.dist(s.c, sc) - s.r > sr) continue; }
+          if (m.material?.doubleSided) gl.disable(gl.CULL_FACE); else gl.enable(gl.CULL_FACE);
+          this._bindMesh(p, m); this._drawMesh(m);
+        }
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+      };
       this._computeShadowVP(env);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFBO);
-      gl.viewport(0, 0, this.shadowSize, this.shadowSize);
-      gl.clear(gl.DEPTH_BUFFER_BIT);
-      gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
-      gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
-      gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 3.0);
-      const p = this.prog.depth.use();
-      p.m4('uViewProj', this.shadowVP); p.m4('uShadowVP', this.shadowVP); p.f('uInflate', 0);
-      const sc = env.shadowCenter, sr = env.shadowRadius * 1.8;
-      for (const m of meshes) {
-        if (!m.castShadow || (m.material && m.material.opacity < 0.5)) continue;
-        if (this.settings.culling) { const s = this._sphere(m); if (vec3.dist(s.c, sc) - s.r > sr) continue; }
-        if (m.material?.doubleSided) gl.disable(gl.CULL_FACE); else gl.enable(gl.CULL_FACE);
-        this._bindMesh(p, m); this._drawMesh(m);
+      pass(this.shadowFBO, this.shadowSize, this.shadowVP, env.shadowRadius);
+      // the far cascade covers ~4x the area and only refreshes every other frame
+      this._farFrame = (this._farFrame || 0) + 1;
+      if (cascade && (this._farFrame % 2 === 1 || !this._farReady)) {
+        const far = env.shadowFar || env.shadowRadius * 4;
+        this._computeShadowVP(env, far, this.shadowVP2, this.shadowSize2);
+        pass(this.shadowFBO2, this.shadowSize2, this.shadowVP2, far);
+        this._farReady = true;
       }
-      gl.disable(gl.POLYGON_OFFSET_FILL);
       this.stats.drawCalls = 0; this.stats.triangles = 0;
     }
 
@@ -452,7 +477,8 @@ export class Renderer {
     const volAmt = env.volumetric ?? 0;
     const useVol = fx && this.settings.volumetrics && volAmt > 0;
     const useContact = fx && this.settings.contactShadows && shadows;
-    const needG = useAO || useSSR || useVol || useContact;
+    const useDOF = fx && this.settings.dofAperture > 0;
+    const needG = useAO || useSSR || useVol || useContact || useDOF;
     if (needG) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.gFBO);
       gl.viewport(0, 0, this.gw, this.gh);
@@ -523,6 +549,8 @@ export class Renderer {
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, useAO ? this.ao2Tex : this.identityJoints); p.i('uAO', 2);
     p.f('uFogHeight', o.fog === false ? 0 : env.fogHeight || 0);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.shadowTex); gl.bindSampler(3, this.rawSampler); p.i('uShadowRaw', 3);
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, this.shadowTex2); p.i('uShadowMap2', 5);
+    p.m4('uShadowVP2', this.shadowVP2); p.i('uCascade', cascade && this._farReady ? 1 : 0); p.f('uShadowTexel2', 1 / this.shadowSize2);
     const soft = shadows && this.settings.softShadows ? env.shadowSoftness ?? 2.5 : 0;
     p.f('uShadowSoft', soft > 0 ? 3 * Math.tan((soft * Math.PI) / 180) : 0);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, needG ? this.gTex : this.identityJoints); p.i('uGBuf', 4);
@@ -635,7 +663,15 @@ export class Renderer {
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     gl.bindVertexArray(this.emptyVAO);
     gl.bindSampler(3, null); // the raw shadow-depth sampler is only for the main shader
-    const src = useSSR || useVol ? this._screenEffects(camera, env, { useSSR, useVol, volAmt, shadows, nLights }) : this.resolveTex;
+    let src = useSSR || useVol ? this._screenEffects(camera, env, { useSSR, useVol, volAmt, shadows, nLights }) : this.resolveTex;
+    if (useDOF) {
+      const d = this.prog.dof.use(); gl.bindFramebuffer(gl.FRAMEBUFFER, this.dofFBO); gl.viewport(0, 0, this.width, this.height);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src); d.i('uColor', 0);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.gTex); d.i('uG', 1);
+      d.v2('uRes', [this.width, this.height]); d.f('uFocus', this.settings.dofFocus); d.f('uAperture', this.settings.dofAperture); d.f('uMaxBlur', this.settings.dofMaxBlur * this.width / 1600);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      src = this.dofTex;
+    }
     const bloom = this.settings.bloom && lit;
     if (bloom) {
       const b = this.prog.bright.use();

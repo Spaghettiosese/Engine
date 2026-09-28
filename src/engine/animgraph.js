@@ -268,3 +268,45 @@ export class Tweens {
   sequence(steps) { return new Promise((resolve) => { const run = (i) => (i >= steps.length ? resolve() : steps[i]().then(() => run(i + 1))); run(0); }); }
   get active() { return this.list.length; }
 }
+
+// ------------------------------------------------------------------ aim IK
+// Points a held weapon at a world target by turning a bone chain (spine, chest, shoulder)
+// a little each and the aiming arm the rest. axis/offset describe the barrel in the hand
+// bone's space (e.g. from a socket), so the muzzle - not the wrist - lines up with the target.
+export class AimIK {
+  constructor(character, { chain = [['spine', 0.15], ['chest', 0.3], ['upperArm.R', 1]], bone = 'hand.R', axis = [0, -1, 0], offset = [0, -0.1, 0.04], iterations = 3, maxAngle = 110 } = {}) {
+    const sk = character.skeleton;
+    this.ch = character; this.chain = chain.map(([n, w]) => [sk.boneIndex(n), w]).filter(([i]) => i >= 0);
+    this.bone = sk.boneIndex(bone); this.axis = axis; this.offset = offset; this.iterations = iterations; this.maxAngle = maxAngle;
+    this.target = null; this.weight = 1;
+  }
+  // barrel origin and direction in model space
+  barrel() {
+    const sk = this.ch.skeleton, q = sk.worldRotation(this.bone);
+    return { origin: vec3.add([0, 0, 0], sk.worldHead(this.bone), vec3.transformQuat([0, 0, 0], this.offset, q)), dir: vec3.normalize([0, 0, 0], vec3.transformQuat([0, 0, 0], this.axis, q)) };
+  }
+  update() {
+    if (!this.target || this.weight <= 0) return 0;
+    const sk = this.ch.skeleton, inv = mat4.invert(mat4.create(), this.ch.world);
+    const t = vec3.transformMat4([0, 0, 0], this.target, inv);
+    let err = 0;
+    for (let it = 0; it < this.iterations; it++) {
+      for (const [i, w] of this.chain) {
+        const b = this.barrel(), want = vec3.normalize([0, 0, 0], vec3.sub([0, 0, 0], t, b.origin));
+        const ang = (Math.acos(clamp(vec3.dot(b.dir, want), -1, 1)) * 180) / Math.PI;
+        if (ang > this.maxAngle) return ang; // target is behind: don't wring the arm around
+        const d = quat.rotationTo(quat.create(), b.dir, want);
+        const part = quat.slerp(quat.create(), quat.create(), d, w * this.weight * (it === 0 ? 1 : 0.7));
+        setWorldRotation(sk, i, quat.multiply(quat.create(), part, sk.worldRotation(i)));
+      }
+    }
+    const b = this.barrel(), want = vec3.normalize([0, 0, 0], vec3.sub([0, 0, 0], t, b.origin));
+    err = (Math.acos(clamp(vec3.dot(b.dir, want), -1, 1)) * 180) / Math.PI;
+    return err;
+  }
+  // world-space muzzle position and direction (for tracers and hitscan)
+  muzzle() {
+    const b = this.barrel();
+    return { origin: vec3.transformMat4([0, 0, 0], b.origin, this.ch.world), dir: vec3.normalize([0, 0, 0], vec3.transformDir([0, 0, 0], b.dir, this.ch.world)) };
+  }
+}

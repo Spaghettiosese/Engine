@@ -110,6 +110,22 @@ const qdist = (a, b) => 1 - Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a
   for (let i = 0; i < 40; i++) tw.update(1 / 60);
   check('tweens', done === 1 && Math.abs(n.position[0] - 2) < 1e-6 && Math.abs(ang - 90) < 0.1 && Math.abs(m.position[1]) < 1e-6 && tw.active === 0, `door at x ${n.position[0].toFixed(2)}, ${ang.toFixed(1)}°, lamp back at ${m.position[1].toFixed(3)}`);
 }
+{ // revolver: socket follows the hand; aim IK puts the barrel on target within a degree
+  const { createRevolver, HAND_SOCKET } = await import('../src/content/revolver.js');
+  const c = createCowboy(); c.play('Idle', { fade: 0 });
+  const up = c.mixer.addLayer('gun', { mask: E.boneMask(c.skeleton, ['spine']) });
+  up.play('Aim Revolver', { fade: 0 });
+  const gun = c.attach(createRevolver(), 'hand.R', HAND_SOCKET);
+  // barrel in hand space from the socket: gun +Z is the barrel, the muzzle 17 cm along it
+  const aim = new E.AimIK(c, { axis: [0, -1, 0], offset: [HAND_SOCKET.position[0], HAND_SOCKET.position[1] - 0.17, HAND_SOCKET.position[2] + 0.036] });
+  const errs = [];
+  for (const target of [[2, 1.5, 6], [-3, 0.4, 5], [0, 3, 4]]) {
+    c.update(1 / 60); aim.target = target; errs.push(aim.update()); c.updateSockets(); c.updateWorld(null);
+  }
+  const hand = E.vec3.transformMat4([0, 0, 0], c.skeleton.worldHead(c.skeleton.boneIndex('hand.R')), c.world);
+  const gp = gun.worldPosition();
+  check('revolver socket + aim IK', errs.every((e) => e < 1.5) && E.vec3.dist(hand, gp) < 0.12, `barrel error ${errs.map((e) => e.toFixed(2) + '°').join(', ')}, gun ${(E.vec3.dist(hand, gp) * 100).toFixed(0)} cm from the wrist`);
+}
 let fail = 0;
 for (const [name, ok, info] of results) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${info ? ' — ' + info : ''}`); if (!ok) fail++; }
 if (fail) process.exit(1);
