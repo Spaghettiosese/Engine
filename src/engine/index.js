@@ -17,6 +17,9 @@ export * from './choreo.js';
 export * from './sky.js';
 export * from './batch.js';
 export * from './architecture.js';
+export * from './physics.js';
+export * from './ragdoll.js';
+export * from './animgraph.js';
 
 // Minimal game loop helper: calls update(dt, time) then render every frame.
 export function runLoop(update) {

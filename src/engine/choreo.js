@@ -4,6 +4,8 @@
 // other moving things (a hand, a weapon), and blending happens in world space, so a prop
 // can be handed from one attachment to another without popping.
 import { quat, vec3, clamp } from './math.js';
+import { twoBoneIK, setWorldRotation } from './ik.js';
+import { applyHandPose, hasFingers, HAND_POSES } from './gait.js';
 
 export const EASE = {
   linear: (s) => s,
@@ -69,4 +71,54 @@ export function bakePoses(sk, name, times, poses, { loop = false, posBones = [],
     }
   });
   return { name, duration: r(times[times.length - 1]), loop, tracks, rootMotion: [0, 0, 0], syncGroup: null, events: [], ...extra };
+}
+
+// ------------------------------------------------------------------ key-pose authoring
+// Author a clip as a few full-body key poses. Each frame carries over everything from the
+// previous one, so a frame only lists what changes:
+//   { t, bones: { spine: [x,y,z], 'upperArm.R': [...] },   local euler degrees
+//     hips: [x,y,z],                                         model-space hips position
+//     arms: { R: { target, pole, handRot } | null },         two-bone IK for the hands
+//     legs: { L: { target, pole, pitch } | 'plant' | null }, 'plant' keeps the foot on the floor
+//     hands: { L: 'relaxed' | { curl, spread } } }
+// Bones named with a trailing '*' (e.g. 'upperArm*') are set on both sides, mirrored.
+export function keyPoseClip(sk, name, frames, { loop = false, events = [], rootMotion = [0, 0, 0], syncGroup = null } = {}) {
+  const state = { bones: {}, hips: null, arms: {}, legs: {}, hands: {} };
+  const idx = (n) => sk.boneIndex(n);
+  const times = [], poses = [];
+  const hi = idx('hips'), hipsRest = sk.bones[hi].head;
+  const footRest = { L: sk.bones[idx('foot.L')]?.head, R: sk.bones[idx('foot.R')]?.head };
+  for (const f of frames) {
+    for (const [k, v] of Object.entries(f.bones || {})) {
+      if (k.endsWith('*')) { const b = k.slice(0, -1); state.bones[b + '.L'] = v; state.bones[b + '.R'] = [v[0], -v[1], -v[2]]; }
+      else state.bones[k] = v;
+    }
+    if (f.hips) state.hips = f.hips;
+    Object.assign(state.arms, f.arms || {}); Object.assign(state.legs, f.legs || {}); Object.assign(state.hands, f.hands || {});
+    sk.resetPose();
+    for (const [b, e] of Object.entries(state.bones)) { const i = idx(b); if (i >= 0) sk.rot.set(quat.fromEuler(quat.create(), e[0], e[1], e[2]), i * 4); }
+    if (state.hips && hi >= 0) sk.pos.set([state.hips[0] - hipsRest[0], state.hips[1] - hipsRest[1], state.hips[2] - hipsRest[2]], hi * 3);
+    sk.update();
+    for (const side of ['L', 'R']) {
+      const sg = side === 'L' ? 1 : -1;
+      let leg = state.legs[side];
+      if (leg === 'plant' && footRest[side]) leg = { target: [footRest[side][0], footRest[side][1], footRest[side][2]], pitch: 0 };
+      if (leg && leg.target && idx('thigh.' + side) >= 0) {
+        twoBoneIK(sk, idx('thigh.' + side), idx('shin.' + side), idx('foot.' + side), leg.target, leg.pole || [sg * 0.1, 0, 1]);
+        setWorldRotation(sk, idx('foot.' + side), quat.fromEuler(quat.create(), leg.pitch || 0, 0, 0));
+      }
+      const arm = state.arms[side];
+      if (arm && arm.target && idx('upperArm.' + side) >= 0) {
+        twoBoneIK(sk, idx('upperArm.' + side), idx('foreArm.' + side), idx('hand.' + side), arm.target, arm.pole || [sg, -0.5, -0.3]);
+        if (arm.handRot) setWorldRotation(sk, idx('hand.' + side), quat.fromEuler(quat.create(), ...arm.handRot));
+      }
+      const hp = state.hands[side];
+      if (hp && hasFingers(sk, side)) applyHandPose(sk, side, typeof hp === 'string' ? HAND_POSES[hp] : hp);
+    }
+    sk.update();
+    times.push(f.t); poses.push(sk.snapshotPose());
+  }
+  const clip = bakePoses(sk, name, times, poses, { loop, posBones: ['hips'], events, rootMotion, syncGroup });
+  sk.resetPose(); sk.update();
+  return clip;
 }

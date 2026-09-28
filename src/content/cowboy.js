@@ -4,6 +4,7 @@ import { Character } from '../engine/character.js';
 import { Skeleton } from '../engine/skeleton.js';
 import { expandSkeleton } from '../engine/character.js';
 import { synthesizeLocomotion, synthesizeCrawl, synthesizeIdle } from '../engine/gait.js';
+import { v3Moves } from './moves.js';
 
 // Fingers (left hand; mirrored to the right). Rest pose: straight, hanging down,
 // palm facing the thigh (-X). Each finger has a proximal and a distal bone.
@@ -156,6 +157,7 @@ export function cowboyClips() {
       headPitch: 4, handFlex: -15, spineLean: 3, chestLean: 2, hands: 'fist', fingerSwing: 0.04,
     }),
     synthesizeCrawl(sk, { name: 'Crawl' }),
+    ...v3Moves(sk),
   ];
 }
 
