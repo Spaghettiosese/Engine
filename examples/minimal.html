@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hello Engine</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="examples.css">
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Minimal ShapeForge scene"></canvas>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Hello Engine</h1><small>The smallest ShapeForge V2 scene: about 40 lines, view source</small></div></div>
+  <div class="card keys">Drag to orbit. The Cowboy walks a circle while the day turns.</div>
+</div>
+<nav class="nav"><a href="../index.html">Home</a><a href="frontier-town.html">Frontier Town</a></nav>
+<script type="module">
+import * as E from '../src/engine/index.js';
+import { createCowboy } from '../src/content/cowboy.js';
+
+// renderer, scene, camera and orbit controls
+const renderer = new E.Renderer(document.getElementById('stage'));
+const scene = new E.Scene();
+const camera = new E.Camera();
+camera.position.set([8, 4.5, 11]); camera.target.set([0, 1.5, -2]);
+scene.environment.shadowRadius = 10;
+const controls = new E.OrbitControls(camera, renderer.canvas, { leftButtonOrbit: true });
+
+// ground, a building from the architecture kit, and a lantern that lights up at night
+scene.add(new E.Mesh(E.plane({ width: 60, depth: 60 }), new E.Material({ color: '#b08a62', pattern: 'dirt', patternScale: 1 })));
+const palette = E.archPalette();
+const kit = E.building(new E.Kit(palette), { width: 7, depth: 8, floors: 1, sign: 'HELLO', roof: 'falseFront' });
+const house = kit.toNode('House'); house.position.set([0, 0, -5]); scene.add(house);
+const lamp = new E.Light('point', { color: '#ffb266', range: 9, flicker: 0.3 }); lamp.position.set([2.5, 2.4, 1]); scene.add(lamp);
+
+// a rigged, animated character: play a clip and move it
+const cowboy = createCowboy(); scene.add(cowboy);
+cowboy.play('Walk');
+
+let hours = 16, angle = 0;
+E.runLoop((dt) => {
+  hours = (hours + dt * 0.4) % 24;                         // a day lasts one minute
+  E.applyTimeOfDay(scene.environment, hours);              // sun, sky, fog, exposure, stars
+  const night = scene.environment.night;
+  E.setNightLights(palette, night);                        // windows and sign glow
+  lamp.intensity = 10 * night;
+  house.traverse((n) => { if (n.isLight) n.intensity = 6 * night; });
+
+  angle += (dt * cowboy.mixer.rootVelocity()[2]) / 3;     // walk a 3 m circle at clip speed
+  cowboy.position.set([Math.cos(angle) * 3, 0, Math.sin(angle) * 3 + 1]);
+  cowboy.setEuler(0, -angle * E.RAD, 0);
+  cowboy.update(dt);
+  controls.update(dt);
+  renderer.render(scene, camera, { background: 'sky' });
+});
+</script>
+</body>
+</html>

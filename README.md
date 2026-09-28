@@ -7,15 +7,61 @@ A zero-dependency WebGL2 engine for building 3D characters out of parametric sha
 | `index.html` | Landing page with a live render of the Cowboy cycling through his clips |
 | `editor.html` | **ShapeForge Studio**, a Blender-style editor (layout, hotkeys, modes, dope sheet) |
 | `viewer.html` | **Animation Viewer**: crossfades, root motion, WASD play mode, onion skins, exports |
+| `examples/` | **V2 examples**: Frontier Town (playable), Lighting Lab, Architect, Hello Engine |
 
 Everything is plain ES modules. No build step, no npm dependencies.
 
 ```bash
 npm start          # serves the folder on http://localhost:8080 (any static server works)
-npm test           # geometry, animation and export checks (Node 18+)
+npm test           # geometry, animation, export, weapon and world checks (Node 18+)
 ```
 
 ES modules don't load from `file://`, so open the pages through a local server.
+
+---
+
+## What's new in V2
+
+V2 puts a world around the characters: local lights, a day/night cycle, ambient occlusion, fog, and a kit for putting up buildings and whole towns.
+
+| Feature | Details |
+| --- | --- |
+| Point and spot lights | `new Light('point' \| 'spot', { color, intensity, range, angle, flicker })`. Up to 16 per frame, nearest to the camera first, with smooth range falloff. Spot lights shine down their local -Y axis. `flicker` animates lanterns and torches. |
+| Time of day | `applyTimeOfDay(env, hours)` sets the sun and moon, sky, ambient, fog colour, exposure, stars and light shafts from one number. Sunrise is 05:54 and sunset 19:00. `env.night` (0 to 1) says how dark it is. |
+| Ambient occlusion | Half-resolution SSAO from a normal and depth prepass, with a depth-aware blur. `env.aoRadius`, `env.aoIntensity`, and `renderer.settings.ssao` switch it off. |
+| Height fog | `env.fogHeight` adds dust that settles near the ground on top of distance fog. |
+| Light shafts | Screen-space rays from the sun through the bloom buffer, strongest when the sun is low (`env.godRays`, `renderer.settings.godRays`). |
+| Instancing | `new InstancedMesh(geometry, material, count)` and `setTransformAt(i, pos, euler, scale)` draw thousands of copies in one call. |
+| Culling and batching | Bounding-sphere frustum culling (`renderer.stats.culled`), and `batchStatic(node)` collapses a hierarchy into one mesh per material. |
+| New materials | `planks`, `brick`, `shingles`, `stucco`, `glass` (window panes that glow at night) and `corrugated` tin, 21 patterns in all. |
+| Architecture kit | `Kit` merges geometry per material. `building(kit, params)` makes walls with framed windows and doors, porches, balconies, false fronts, gable, hip or flat roofs, chimneys and 3D sign lettering. Also `wall`, `lettering`, `lantern`, `lampPost`, `stairs`, `bridge`, `waterTower`, `windmill`, `wagon`, `well`, `fenceLine`, `telegraphLine`, `bench`, `crate` and `barrel`. |
+| Towns and collision | `westernTown({ seed })` in `src/content/town.js` returns the scene root, lamps, interior lights, colliders and `setNight(n)`. `collide(position, radius, colliders)` pushes a character out of buildings. |
+
+```js
+import * as E from './src/engine/index.js';
+
+const palette = E.archPalette();                                    // shared materials
+const saloon = E.building(new E.Kit(palette), { floors: 2, roof: 'falseFront', door: 'batwing', sign: 'SALOON' }).toNode();
+scene.add(saloon);
+const lamp = new E.Light('point', { color: '#ffb266', range: 9, flicker: 0.3 });
+lamp.position.set([3, 2.4, 2]); scene.add(lamp);
+
+E.runLoop((dt) => {
+  E.applyTimeOfDay(scene.environment, (hours += dt / 60) % 24);    // a day per 24 minutes
+  E.setNightLights(palette, scene.environment.night);              // windows and signs glow
+  lamp.intensity = 10 * scene.environment.night;
+  renderer.render(scene, camera, { background: 'sky' });
+});
+```
+
+### Examples
+
+| Page | Shows |
+| --- | --- |
+| `examples/frontier-town.html` | A playable third-person scene: the Cowboy (WASD, Shift runs, C crawls) in a generated town with collisions, a running clock and 37 lights. After dark the Grinner comes out and chases you. |
+| `examples/lighting-lab.html` | All 21 materials under orbiting coloured lights and a sweeping spot. Click the floor to drop lights; toggle SSAO, shafts, shadows and bloom. 600 pebbles in one instanced draw. |
+| `examples/architect.html` | Every `building()` parameter on a control, a street of up to five batched lots, and OBJ export. |
+| `examples/minimal.html` | The smallest V2 scene, about 40 lines. Start here. |
 
 ---
 
@@ -100,18 +146,21 @@ runLoop((dt) => {
 | `math.js` | vec3 / quat / mat4, Euler (XYZ, degrees), seeded RNG, value noise |
 | `geometry.js` | `Geometry`, and 12 shapes: cube, rounded cube, UV sphere, superquadric, cylinder, cone, torus, capsule, plane, lathe, tube sweep, extruded outline (star, gear, heart, polygon, arrow, circle) |
 | `modifiers.js` | Taper, Twist, Bend, Displace (noise), Inflate, Flatten, Sculpt Profile, Wave, Smooth, Solidify, Mirror, Array; `buildShape(shape, modifiers)` |
-| `scene.js` | `Node`, `Mesh`, `Camera`, `Scene` (sun, sky, fog, exposure), `Material` with 13 procedural patterns |
+| `scene.js` | `Node`, `Mesh`, `Light`, `InstancedMesh`, `Camera`, `Scene` (sun, sky, fog, exposure, AO, lights), `Material` with 21 procedural patterns |
 | `skeleton.js` | `Skeleton` (pose, joint matrices, spring bones), `computeSkinWeights` (rigid or automatic) |
 | `animation.js` | `Clip` (smooth / linear / constant keys, events, root motion, sync groups), `Mixer` (crossfades, blend weights, phase sync) |
 | `character.js` | `Character`: skeleton + parts + materials + clips, JSON round-trip, automatic left/right mirroring |
 | `ik.js` | Two-bone IK, aim constraints, world-space rotation helpers |
 | `gait.js` | Procedural gait synthesizer (`synthesizeLocomotion`, `synthesizeCrawl`, `synthesizeAllFours`, `synthesizeIdle`, each with an `overlay` hook for per-creature quirks) and hand posing (`applyHandPose`, `HAND_POSES`: relaxed, fist, flat, point, gun grip, thumbs up, spread, claw) |
-| `renderer.js` / `shaders.js` | Forward renderer: GGX PBR, 12-tap PCF shadows, procedural sky with mesas and clouds, derivative bump mapping, bloom, ACES, FXAA fallback, selection outlines, onion-skin ghosts, particles, GPU picking |
+| `renderer.js` / `shaders.js` | Forward renderer: GGX PBR, 12-tap PCF shadows, 16 point/spot lights, SSAO, height fog, light shafts, instancing, frustum culling, procedural sky with mesas and clouds, derivative bump mapping, bloom, ACES, FXAA fallback, selection outlines, onion-skin ghosts, particles, GPU picking |
 | `controls.js` | Orbit / pan / zoom with Blender bindings and touch support |
 | `particles.js` | Soft point-sprite particles (footstep dust) |
 | `io.js` | Export binary glTF 2.0 (skin, PBR factors, every clip) and OBJ (posed) |
 | `debug.js` | Skeleton lines, octahedral bone meshes, ghost posing |
 | `choreo.js` | Choreography: key-pose channels with attachments, world-space blending, baking to clips |
+| `sky.js` | `applyTimeOfDay`, `sunDirection`, `isDark` |
+| `batch.js` | `batchStatic`: one mesh per material for static hierarchies |
+| `architecture.js` | `archPalette`, `Kit`, `building`, `wall`, `lettering`, props and structures |
 
 ### Blending locomotion from a speed value
 

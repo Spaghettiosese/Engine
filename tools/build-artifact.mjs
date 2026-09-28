@@ -13,6 +13,7 @@ writeFileSync(join(out, 'index.html'), html);
 const files = ['editor.html', 'viewer.html', 'assets/cowboy.json', 'assets/grinner.json', 'assets/m1-garand.json'];
 const walk = (d) => readdirSync(join(root, d)).forEach((f) => { const p = join(d, f); statSync(join(root, p)).isDirectory() ? walk(p) : files.push(p); });
 walk('src');
+walk('examples');
 for (const f of files) { mkdirSync(dirname(join(out, f)), { recursive: true }); copyFileSync(join(root, f), join(out, f)); }
 writeFileSync(join(out, 'files.json'), JSON.stringify(files));
 console.log('dist/artifact:', files.length + 1, 'files');

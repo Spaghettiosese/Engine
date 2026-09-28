@@ -3,7 +3,7 @@ import { vec3, quat, mat4, DEG, hexToRGB } from './math.js';
 
 let NEXT_ID = 1;
 
-export const PATTERNS = ['none', 'fabric', 'denim', 'leather', 'metal', 'wood', 'skin', 'plaid', 'stripes', 'checker', 'dirt', 'felt', 'hair', 'eye', 'walnut'];
+export const PATTERNS = ['none', 'fabric', 'denim', 'leather', 'metal', 'wood', 'skin', 'plaid', 'stripes', 'checker', 'dirt', 'felt', 'hair', 'eye', 'walnut', 'planks', 'brick', 'shingles', 'stucco', 'glass', 'corrugated'];
 
 export class Material {
   constructor(o = {}) {
@@ -68,6 +68,37 @@ export class Mesh extends Node {
   }
 }
 
+// Local light. Point lights shine in all directions; spot lights shine down their node's
+// local -Y axis (so a lamp hanging from a bracket just works). Up to 16 are used per frame,
+// nearest to the camera first.
+export class Light extends Node {
+  constructor(type = 'point', { color = '#ffc07a', intensity = 6, range = 8, angle = 45, flicker = 0 } = {}) {
+    super(type === 'spot' ? 'Spot Light' : 'Point Light');
+    this.isLight = true;
+    this.type = type;
+    this.color = color; this.intensity = intensity; this.range = range; this.angle = angle;
+    this.flicker = flicker; // 0..1, animated by the renderer (lanterns, torches)
+    this.seed = Math.random() * 100;
+  }
+}
+
+// Many copies of one geometry in a single draw call. Set matrices with setMatrixAt().
+export class InstancedMesh extends Node {
+  constructor(geometry, material, count, name = 'Instanced') {
+    super(name);
+    this.geometry = geometry; this.material = material;
+    this.count = count; this.instanceMatrices = new Float32Array(count * 16);
+    for (let i = 0; i < count; i++) this.instanceMatrices.set(mat4.create(), i * 16);
+    this.castShadow = true; this.receiveShadow = true; this.pickable = false;
+    this.instanceVersion = 0;
+  }
+  setMatrixAt(i, m) { this.instanceMatrices.set(m, i * 16); this.instanceVersion++; }
+  setTransformAt(i, pos, eulerDeg = [0, 0, 0], scale = [1, 1, 1]) {
+    const q = quat.fromEuler(quat.create(), eulerDeg[0], eulerDeg[1], eulerDeg[2]);
+    this.setMatrixAt(i, mat4.fromRTS(mat4.create(), q, pos, scale));
+  }
+}
+
 export class Camera {
   constructor() {
     this.position = vec3.create(4, 3, 6);
@@ -112,6 +143,9 @@ export class Scene extends Node {
       fogColor: [0.86, 0.74, 0.62], fogDensity: 0.012,
       exposure: 1.0, sky: true, clouds: true,
       shadowCenter: [0, 1, 0], shadowRadius: 4,
+      // V2
+      night: 0, moonDirection: [-0.4, 0.6, -0.5], fogHeight: 0,
+      ao: true, aoRadius: 0.5, aoIntensity: 1.4, aoStrength: 1, godRays: 0, rayColor: [1, 0.85, 0.6], lights: true,
     };
   }
 }

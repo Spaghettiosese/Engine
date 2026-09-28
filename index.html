@@ -51,6 +51,20 @@
   pre { margin: 0; padding: 18px; background: #0f0b09; border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; font: 13.5px/1.6 'JetBrains Mono', ui-monospace, monospace; color: #e8d9c2; }
   pre .k { color: var(--brass); } pre .s { color: var(--sage); } pre .c { color: var(--sand-3); }
   footer { color: var(--sand-3); font-size: 14px; padding: 24px clamp(16px, 5vw, 64px) 40px; border-top: 1px solid var(--line); max-width: 1180px; margin: 0 auto; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .ex { display: grid; grid-template-rows: auto 1fr; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--night-2); text-decoration: none; }
+  .ex img { width: 100%; aspect-ratio: 12 / 7; object-fit: cover; display: block; background: #0f0b09; }
+  .ex div { padding: 14px 16px 16px; display: grid; gap: 4px; align-content: start; }
+  .ex h3 { margin: 0; font-size: 21px; display: flex; justify-content: space-between; gap: 8px; }
+  .ex h3 span { color: var(--brass); font-size: 15px; font-weight: 600; }
+  .ex p { margin: 0; color: var(--sand-2); font-size: 16px; }
+  .ex:hover { border-color: rgba(227,169,79,.55); }
+  .ex.small { grid-column: 1 / -1; }
+  .ex.small div { padding: 14px 16px; }
+  .v2 { display: inline-block; font: 600 12px 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .08em; color: #2a1407; background: var(--brass); padding: 2px 7px; border-radius: 5px; vertical-align: middle; }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 22px; margin: 18px 0 22px; padding: 0; list-style: none; }
+  .features li { color: var(--sand-2); padding-left: 14px; border-left: 2px solid rgba(227,169,79,.5); }
+  .features b { color: var(--sand); display: block; font-weight: 600; }
   .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--sand-3); }
   @media (max-width: 720px) {
     .hero { min-height: 640px; align-items: end; }
@@ -65,10 +79,12 @@
   <div class="fallback" id="fallback" hidden>Live preview needs WebGL2.</div>
   <div class="hero-copy">
     <h1 class="wordmark">Shape<span>Forge</span></h1>
+    <div><span class="v2">V2</span> <span style="color:var(--sand-2)">local lights, ambient occlusion, time of day, buildings</span></div>
     <p class="lede">A 3D model and animation engine where every character is built from shapes, rigged to bones and set in motion.</p>
     <div class="ctas">
       <a class="cta primary" href="editor.html">Open the Studio</a>
       <a class="cta" href="viewer.html">Animation Viewer</a>
+      <a class="cta" href="examples/frontier-town.html">Play Frontier Town</a>
     </div>
     <div class="now" aria-live="polite"><span>now playing <b id="nowClip">Idle</b></span><span>crossfade <b id="nowFade">phase-synced</b></span></div>
   </div>
@@ -81,7 +97,8 @@
       <h3>Engine <a href="#use">API ↓</a></h3>
       <ul>
         <li>WebGL2 renderer: PBR, soft PCF sun shadows, HDR bloom, ACES tone mapping, MSAA</li>
-        <li>13 procedural materials (plaid, denim, leather, felt, skin, wood, metal…), bump-mapped in the shader</li>
+        <li>V2: 16 point and spot lights, SSAO, height fog, light shafts, instancing, frustum culling</li>
+        <li>21 procedural materials (plaid, denim, leather, brick, shingles, glass, corrugated tin…), bump-mapped in the shader</li>
         <li>12 parametric shapes and 12 non-destructive modifiers</li>
         <li>GPU skinning with automatic weights, spring bones, two-bone IK</li>
         <li>Clip mixer with phase-synced crossfades and root motion</li>
@@ -147,6 +164,25 @@
     </table>
   </div>
 
+  <h2>V2: light, weather and buildings</h2>
+  <p class="sub">Version 2 turns the character engine into a world engine. Scenes now have a clock, local lights, ambient occlusion and a kit for putting up whole towns, and the new examples show each part.</p>
+  <ul class="features">
+    <li><b>Point and spot lights</b>16 per frame, nearest first, with range falloff and lantern flicker</li>
+    <li><b>Time of day</b>One number drives the sun, moon, stars, sky, fog, exposure and light shafts</li>
+    <li><b>Ambient occlusion</b>Half-resolution SSAO with a depth-aware blur, so corners and contact points darken</li>
+    <li><b>Height fog and light shafts</b>Dust that settles into the street and sun rays through gaps at dawn and dusk</li>
+    <li><b>Architecture kit</b>Walls with framed windows and doors, porches, balconies, false fronts, gable and hip roofs, and 3D sign lettering</li>
+    <li><b>Props and structures</b>Water tower, windmill, wagon, well, bridge, stairs, fences, telegraph line, crates and barrels</li>
+    <li><b>Performance</b>Instanced meshes, static batching per material and frustum culling. The town is about 200 draw calls</li>
+    <li><b>Collision</b>2D box colliders with circle push-out, so characters walk around buildings</li>
+  </ul>
+  <div class="gallery">
+    <a class="ex" href="examples/frontier-town.html"><img src="examples/thumbs/frontier-town.jpg" alt="The frontier town at night, windows lit, the Cowboy in the street" loading="lazy"><div><h3>Frontier Town <span>Play ↗</span></h3><p>Walk the Cowboy through a generated town as the day turns. After dark the lamps come on and the Grinner comes out.</p></div></a>
+    <a class="ex" href="examples/lighting-lab.html"><img src="examples/thumbs/lighting-lab.jpg" alt="Material spheres lit by coloured point lights" loading="lazy"><div><h3>Lighting Lab <span>Open ↗</span></h3><p>All 21 materials under moving coloured lights and a sweeping spot. Click the floor to add lights and switch each effect on and off.</p></div></a>
+    <a class="ex" href="examples/architect.html"><img src="examples/thumbs/architect.jpg" alt="Three generated western buildings at sunset" loading="lazy"><div><h3>Architect <span>Open ↗</span></h3><p>Every building parameter on a slider: floors, roof, facade, porch, sign text. Build a street, then export it as OBJ.</p></div></a>
+    <a class="ex small" href="examples/minimal.html"><div><h3>Hello Engine <span>Open ↗</span></h3><p>The smallest V2 scene, about 40 lines: a building, a lamp, a walking Cowboy and a day that lasts a minute. View its source to start your own game.</p></div></a>
+  </div>
+
   <h2 id="use">Use it in a game</h2>
   <p class="sub">No build step and no dependencies. Import the engine as ES modules and load a character the Studio saved.</p>
 <pre><span class="k">import</span> { Renderer, Scene, Camera, Character, runLoop } <span class="k">from</span> <span class="s">'./src/engine/index.js'</span>;
@@ -162,8 +198,23 @@ runLoop((dt) =&gt; {
   cowboy.update(dt);
   renderer.render(scene, camera);
 });</pre>
+  <p class="sub" style="margin-top:22px">V2 adds a world around the character: a clock, lights and buildings.</p>
+<pre><span class="k">import</span> * <span class="k">as</span> E <span class="k">from</span> <span class="s">'./src/engine/index.js'</span>;
+
+<span class="k">const</span> palette = E.archPalette();                       <span class="c">// shared materials: siding, brick, tin, glass…</span>
+<span class="k">const</span> saloon = E.building(<span class="k">new</span> E.Kit(palette), { floors: <span class="s">2</span>, roof: <span class="s">'falseFront'</span>, door: <span class="s">'batwing'</span>, sign: <span class="s">'SALOON'</span> }).toNode();
+scene.add(saloon);
+<span class="k">const</span> lamp = <span class="k">new</span> E.Light(<span class="s">'point'</span>, { color: <span class="s">'#ffb266'</span>, range: <span class="s">9</span>, flicker: <span class="s">0.3</span> });
+scene.add(lamp);
+
+runLoop((dt) =&gt; {
+  E.applyTimeOfDay(scene.environment, hours += dt / <span class="s">60</span>); <span class="c">// sun, moon, sky, fog, light shafts</span>
+  E.setNightLights(palette, scene.environment.night);   <span class="c">// windows glow after dark</span>
+  lamp.intensity = <span class="s">10</span> * scene.environment.night;
+  renderer.render(scene, camera, { background: <span class="s">'sky'</span> });
+});</pre>
 </main>
-<footer>ShapeForge Engine · zero dependencies · WebGL2 · source in <code>src/engine</code>, Studio in <code>src/editor</code>, Viewer in <code>src/viewer</code>.</footer>
+<footer>ShapeForge Engine · zero dependencies · WebGL2 · source in <code>src/engine</code>, Studio in <code>src/editor</code>, Viewer in <code>src/viewer</code>, V2 examples in <code>examples</code>.</footer>
 <script type="module">
   import * as E from './src/engine/index.js';
   import { createCowboy } from './src/content/cowboy.js';

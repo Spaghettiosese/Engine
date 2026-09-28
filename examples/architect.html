@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architect</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="examples.css">
+<style>
+  .panel { display: grid; gap: 6px; max-height: calc(100vh - 150px); overflow: auto; }
+  .panel h2 { margin: 6px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .panel .row { grid-template-columns: 86px 1fr 44px; }
+  .sel { display: grid; grid-template-columns: 86px 1fr; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Architect: a procedural building you can edit live"></canvas>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Architect</h1><small>ShapeForge V2 example · procedural buildings</small></div></div>
+  <div class="card panel" id="panel">
+    <div class="buttons"><button class="btn primary" id="rand">Randomize</button><button class="btn" id="obj">Export OBJ</button></div>
+    <h2>Shape</h2>
+    <div class="row"><label for="width">Width</label><input id="width" type="range" min="5" max="14" step="0.5"><output></output></div>
+    <div class="row"><label for="depth">Depth</label><input id="depth" type="range" min="6" max="16" step="0.5"><output></output></div>
+    <div class="row"><label for="floors">Floors</label><input id="floors" type="range" min="1" max="3" step="1"><output></output></div>
+    <div class="row"><label for="floorHeight">Floor height</label><input id="floorHeight" type="range" min="2.8" max="4.2" step="0.1"><output></output></div>
+    <div class="row"><label for="windows">Windows</label><input id="windows" type="range" min="1" max="6" step="1"><output></output></div>
+    <h2>Style</h2>
+    <div class="sel"><label for="siding">Walls</label><select id="siding"><option value="siding">Raw planks</option><option value="paint">Painted blue-grey</option><option value="paintRed">Barn red</option><option value="paintCream">Cream</option><option value="brick">Brick</option><option value="stucco">Adobe stucco</option><option value="stone">Stone</option></select></div>
+    <div class="sel"><label for="roof">Roof</label><select id="roof"><option value="falseFront">False front</option><option value="gable">Gable</option><option value="hip">Hip</option><option value="flat">Flat</option></select></div>
+    <div class="sel"><label for="facade">Facade</label><select id="facade"><option value="stepped">Stepped</option><option value="curved">Curved</option><option value="square">Square</option></select></div>
+    <div class="sel"><label for="door">Entrance</label><select id="door"><option value="door">Door</option><option value="batwing">Saloon batwings</option><option value="none">None</option></select></div>
+    <div class="sel"><label for="sign">Sign</label><input id="sign" type="text" maxlength="14" autocomplete="off"></div>
+    <h2>Details</h2>
+    <div class="row"><label for="porchDepth">Porch depth</label><input id="porchDepth" type="range" min="1.2" max="3.5" step="0.1"><output></output></div>
+    <div class="toggles">
+      <label><input type="checkbox" id="porch"> Porch</label>
+      <label><input type="checkbox" id="balcony"> Balcony</label>
+      <label><input type="checkbox" id="shutters"> Shutters</label>
+      <label><input type="checkbox" id="chimney"> Chimney</label>
+      <label><input type="checkbox" id="lanterns"> Lanterns</label>
+    </div>
+    <h2>Scene</h2>
+    <div class="row"><label for="tod">Time</label><input id="tod" type="range" min="0" max="24" step="0.05" value="17.2"><output></output></div>
+    <div class="row"><label for="lots">Street</label><input id="lots" type="range" min="1" max="5" step="1" value="1"><output></output></div>
+  </div>
+</div>
+<div class="stats card" id="stats"></div>
+<nav class="nav"><a href="../index.html">Home</a><a href="frontier-town.html">Frontier Town</a><a href="lighting-lab.html">Lighting Lab</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="architect.js"></script>
+</body>
+</html>

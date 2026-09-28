@@ -60,7 +60,7 @@ export class Renderer {
     this.shadowSize = shadowSize;
     this.stats = { drawCalls: 0, triangles: 0 };
     this.time = 0;
-    this.settings = { bloom: true, bloomStrength: 0.22, bloomThreshold: 1.1, vignette: 0.35, grain: 0.012, exposure: 1.0, fxaa: false };
+    this.settings = { bloom: true, bloomStrength: 0.22, bloomThreshold: 1.1, vignette: 0.35, grain: 0.012, exposure: 1.0, fxaa: false, ssao: true, godRays: true, culling: true };
     const P = (vs, fs) => new Program(gl, vs, fs);
     this.prog = {
       main: P(S.COMMON_VS, S.MAIN_FS),
@@ -72,7 +72,18 @@ export class Renderer {
       particle: P(S.PARTICLE_VS, S.PARTICLE_FS),
       post: P(S.FULLSCREEN_VS, S.POST_FS),
       bright: P(S.FULLSCREEN_VS, S.BRIGHT_FS),
+      gbuf: P(S.COMMON_VS, S.GBUF_FS),
+      ssao: P(S.FULLSCREEN_VS, S.SSAO_FS),
+      aoblur: P(S.FULLSCREEN_VS, S.AOBLUR_FS),
     };
+    this.instCache = new WeakMap();
+    // SSAO hemisphere kernel, denser near the centre
+    this.aoKernel = new Float32Array(48);
+    for (let i = 0; i < 16; i++) {
+      let v; do { v = [Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random()]; } while (Math.hypot(...v) > 1 || Math.hypot(...v) < 0.1);
+      const s = 0.1 + 0.9 * (i / 16) ** 2; this.aoKernel.set(v.map((x) => x * s), i * 3);
+    }
+    this.lightU = { pos: new Float32Array(64), col: new Float32Array(64), spot: new Float32Array(64) };
     this.geoCache = new WeakMap();
     this.jointTex = new WeakMap();
     this.emptyVAO = gl.createVertexArray();
@@ -130,9 +141,19 @@ export class Renderer {
     if (w === this.width && h === this.height) return;
     this.width = w; this.height = h; c.width = w; c.height = h;
     const fmt = this.hdr ? gl.RGBA16F : gl.RGBA8;
-    for (const k of ['msFBO', 'resolveFBO', 'pickFBO', 'b1FBO', 'b2FBO']) if (this[k]) gl.deleteFramebuffer(this[k]);
-    for (const k of ['msColor', 'msDepth', 'pickDepth']) if (this[k]) gl.deleteRenderbuffer(this[k]);
-    for (const k of ['resolveTex', 'pickTex', 'b1Tex', 'b2Tex']) if (this[k]) gl.deleteTexture(this[k]);
+    for (const k of ['msFBO', 'resolveFBO', 'pickFBO', 'b1FBO', 'b2FBO', 'gFBO', 'ao1FBO', 'ao2FBO']) if (this[k]) gl.deleteFramebuffer(this[k]);
+    for (const k of ['msColor', 'msDepth', 'pickDepth', 'gDepth']) if (this[k]) gl.deleteRenderbuffer(this[k]);
+    for (const k of ['resolveTex', 'pickTex', 'b1Tex', 'b2Tex', 'gTex', 'ao1Tex', 'ao2Tex']) if (this[k]) gl.deleteTexture(this[k]);
+    // half-resolution normal+depth buffer and AO targets (V2 ambient occlusion)
+    const gw = Math.max(1, w >> 1), gh = Math.max(1, h >> 1);
+    this.gw = gw; this.gh = gh;
+    this.gTex = this._tex(gw, gh, this.hdr ? gl.RGBA16F : gl.RGBA8); this.gFBO = this._fbo(this.gTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    this.gDepth = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, this.gDepth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, gw, gh);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.gFBO); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.gDepth);
+    this.ao1Tex = this._tex(gw, gh, gl.RGBA8); this.ao1FBO = this._fbo(this.ao1Tex);
+    this.ao2Tex = this._tex(gw, gh, gl.RGBA8); this.ao2FBO = this._fbo(this.ao2Tex);
     this.msColor = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, this.msColor);
     gl.renderbufferStorageMultisample(gl.RENDERBUFFER, this.msaa, fmt, w, h);
     this.msDepth = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, this.msDepth);
@@ -210,9 +231,11 @@ export class Renderer {
   // ------------------------------------------------------------------ helpers
   collect(scene) {
     const list = [];
+    this.lights = [];
     const walk = (n, vis) => {
       vis = vis && n.visible;
       if (!vis) return;
+      if (n.isLight) this.lights.push(n);
       if (n.geometry) list.push(n);
       for (const c of n.children) walk(c, vis);
     };
@@ -221,6 +244,7 @@ export class Renderer {
   }
   _bindMesh(p, mesh, jointTexOverride) {
     const gl = this.gl;
+    p.i('uInstanced', mesh.instanceMatrices ? 1 : 0);
     if (mesh.skeleton && mesh.skinRoot) {
       p.m4('uModel', mesh.skinRoot.world); p.m4('uLocal', mesh.local); p.i('uSkinned', 1);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, jointTexOverride || this._skelTex(mesh.skeleton));
@@ -229,6 +253,84 @@ export class Renderer {
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.identityJoints);
     }
     p.i('uJointTex', 1);
+  }
+  _instVAO(im) {
+    const gl = this.gl, c = this._geo(im.geometry);
+    let e = this.instCache.get(im);
+    if (!e) { e = { vao: gl.createVertexArray(), buf: gl.createBuffer(), version: -1, geoVersion: -1 }; this.instCache.set(im, e); }
+    if (e.geoVersion !== c.version) {
+      gl.bindVertexArray(e.vao);
+      const sizes = [3, 3, 2, 4, 4, 3];
+      for (let loc = 0; loc < 6; loc++) { gl.bindBuffer(gl.ARRAY_BUFFER, c.bufs[loc]); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, sizes[loc], gl.FLOAT, false, 0, 0); }
+      gl.bindBuffer(gl.ARRAY_BUFFER, e.buf);
+      for (let k = 0; k < 4; k++) { gl.enableVertexAttribArray(6 + k); gl.vertexAttribPointer(6 + k, 4, gl.FLOAT, false, 64, k * 16); gl.vertexAttribDivisor(6 + k, 1); }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, c.ibo);
+      gl.bindVertexArray(null);
+      e.geoVersion = c.version; e.version = -1;
+    }
+    if (e.version !== im.instanceVersion) { gl.bindBuffer(gl.ARRAY_BUFFER, e.buf); gl.bufferData(gl.ARRAY_BUFFER, im.instanceMatrices, gl.DYNAMIC_DRAW); e.version = im.instanceVersion; }
+    return { e, c };
+  }
+  _drawMesh(m, wire = false) {
+    if (m.instanceMatrices) {
+      if (wire || !m.count) return;
+      const gl = this.gl, { e, c } = this._instVAO(m);
+      gl.bindVertexArray(e.vao);
+      gl.drawElementsInstanced(gl.TRIANGLES, c.count, gl.UNSIGNED_INT, 0, m.count);
+      this.stats.triangles += (c.count / 3) * m.count; this.stats.drawCalls++;
+      return;
+    }
+    this._draw(m.geometry, wire);
+  }
+  // Bounding sphere of a drawable in world space (for frustum culling)
+  _sphere(m) {
+    const g = m.geometry;
+    if (!g._bs || g._bs.v !== g.version) {
+      const b = g.bounds(), c = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
+      g._bs = { v: g.version, c, r: vec3.dist(b.min, b.max) / 2 };
+    }
+    let M = m.world, extra = 1;
+    if (m.skeleton && m.skinRoot) { M = m.skinRoot.world; extra = 2.2; } // posed limbs can swing well outside the bind pose
+    let c = g._bs.c, r = g._bs.r;
+    if (m.instanceMatrices) {
+      if (!m._ibs || m._ibs.v !== m.instanceVersion) {
+        const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity], I = m.instanceMatrices;
+        let sc = 1;
+        for (let i = 0; i < m.count; i++) { for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], I[i * 16 + 12 + k]); max[k] = Math.max(max[k], I[i * 16 + 12 + k]); } sc = Math.max(sc, Math.hypot(I[i * 16], I[i * 16 + 1], I[i * 16 + 2])); }
+        m._ibs = { v: m.instanceVersion, c: min.map((v, k) => (v + max[k]) / 2), r: vec3.dist(min, max) / 2 + g._bs.r * sc };
+      }
+      c = m._ibs.c; r = m._ibs.r;
+    }
+    const wc = vec3.transformMat4([0, 0, 0], c, M);
+    const s = Math.max(Math.hypot(M[0], M[1], M[2]), Math.hypot(M[4], M[5], M[6]), Math.hypot(M[8], M[9], M[10]));
+    return { c: wc, r: r * s * extra + (m.skeleton ? 0.3 : 0) };
+  }
+  _frustum(vp) {
+    const P = [];
+    for (const [a, sgn] of [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1]]) {
+      const p = [vp[3] + sgn * vp[a], vp[7] + sgn * vp[4 + a], vp[11] + sgn * vp[8 + a], vp[15] + sgn * vp[12 + a]];
+      const l = Math.hypot(p[0], p[1], p[2]) || 1; P.push(p.map((x) => x / l));
+    }
+    return P;
+  }
+  _visible(m, planes) {
+    const s = this._sphere(m);
+    for (const p of planes) if (p[0] * s.c[0] + p[1] * s.c[1] + p[2] * s.c[2] + p[3] < -s.r) return false;
+    return true;
+  }
+  _gatherLights(camera, env) {
+    const U = this.lightU, lights = (this.lights || []).filter((l) => l.intensity > 0);
+    const cp = camera.position, t = this.time;
+    const withD = lights.map((l) => { const p = mat4.getTranslation([0, 0, 0], l.world); return { l, p, d: vec3.dist(p, cp) - l.range }; }).sort((a, b) => a.d - b.d).slice(0, 16);
+    withD.forEach(({ l, p }, i) => {
+      const col = srgbToLinear(hexToRGB(l.color));
+      const f = l.flicker ? 1 - l.flicker * (0.18 + 0.12 * Math.sin(t * 13 + l.seed) + 0.1 * Math.sin(t * 29.3 + l.seed * 3) + 0.06 * Math.sin(t * 57 + l.seed)) : 1;
+      U.pos.set([p[0], p[1], p[2], l.range], i * 4);
+      U.col.set([col[0] * l.intensity * f, col[1] * l.intensity * f, col[2] * l.intensity * f, l.type === 'spot' ? 1 : 0], i * 4);
+      const d = vec3.normalize([0, 0, 0], vec3.transformDir([0, 0, 0], [0, -1, 0], l.world));
+      U.spot.set([d[0], d[1], d[2], Math.cos((l.angle * Math.PI) / 180)], i * 4);
+    });
+    return env.lights === false ? 0 : withD.length;
   }
   _draw(g, wire = false) {
     const gl = this.gl, c = this._geo(g);
@@ -279,14 +381,54 @@ export class Renderer {
       gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 3.0);
       const p = this.prog.depth.use();
       p.m4('uViewProj', this.shadowVP); p.m4('uShadowVP', this.shadowVP); p.f('uInflate', 0);
+      const sc = env.shadowCenter, sr = env.shadowRadius * 1.8;
       for (const m of meshes) {
         if (!m.castShadow || (m.material && m.material.opacity < 0.5)) continue;
+        if (this.settings.culling) { const s = this._sphere(m); if (vec3.dist(s.c, sc) - s.r > sr) continue; }
         if (m.material?.doubleSided) gl.disable(gl.CULL_FACE); else gl.enable(gl.CULL_FACE);
-        this._bindMesh(p, m); this._draw(m.geometry);
+        this._bindMesh(p, m); this._drawMesh(m);
       }
       gl.disable(gl.POLYGON_OFFSET_FILL);
       this.stats.drawCalls = 0; this.stats.triangles = 0;
     }
+
+    // frustum culling for everything drawn from the camera
+    const planes = this._frustum(camera.viewProj);
+    const visible = this.settings.culling ? meshes.filter((m) => this._visible(m, planes)) : meshes;
+    this.stats.culled = meshes.length - visible.length;
+
+    // ambient occlusion: half-res normal/depth pre-pass, SSAO, depth-aware blur
+    const useAO = lit && env.ao !== false && this.settings.ssao && this.hdr && !camera.ortho && shading !== 'toon';
+    if (useAO) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.gFBO);
+      gl.viewport(0, 0, this.gw, this.gh);
+      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+      const g = this.prog.gbuf.use();
+      g.m4('uViewProj', camera.viewProj); g.m4('uView', camera.view); g.m4('uShadowVP', IDENTITY); g.f('uInflate', 0);
+      for (const m of visible) {
+        if (m.material && m.material.opacity < 1) continue;
+        if (m.material?.doubleSided) gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); }
+        g.i('uDoubleSided', m.material?.doubleSided ? 1 : 0);
+        this._bindMesh(g, m); this._drawMesh(m);
+      }
+      gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+      gl.bindVertexArray(this.emptyVAO);
+      const a = this.prog.ssao.use();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.ao1FBO);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.gTex); a.i('uG', 0);
+      const th = Math.tan(camera.fov / 2);
+      a.m4('uProj', camera.proj); a.v2('uTan', [th * camera.aspect, th]); a.f('uRadius', env.aoRadius ?? 0.5); a.f('uIntensity', env.aoIntensity ?? 1.4);
+      gl.uniform3fv(a.u('uKernel'), this.aoKernel);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const bl = this.prog.aoblur.use();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.ao2FBO);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.ao1Tex); bl.i('uAO', 0);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.gTex); bl.i('uG', 1);
+      bl.v2('uTexel', [1 / this.gw, 1 / this.gh]);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    this.stats.drawCalls = 0; this.stats.triangles = 0;
 
     // main pass (HDR, MSAA)
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.msFBO);
@@ -299,6 +441,7 @@ export class Renderer {
       const p = this.prog.sky.use();
       p.m4('uInvViewProj', camera.invViewProj); p.v3('uSunDir', env.sunDirection); p.v3('uSunColor', env.sunColor.map((v) => v * 1.2));
       p.v3('uHorizon', env.horizonColor); p.v3('uZenith', env.zenithColor); p.v3('uGroundColor', env.groundColor); p.i('uClouds', env.clouds ? 1 : 0); p.f('uTime', this.time);
+      p.f('uNight', env.night || 0); p.v3('uMoonDir', env.moonDirection || [0, 1, 0]);
       const editorBg = o.background === 'editor' || (!lit && o.background !== 'sky');
       p.i('uMode', editorBg ? 1 : 0);
       p.v3('uTop', srgbToLinear([0.24, 0.24, 0.25])); p.v3('uBottom', srgbToLinear([0.16, 0.16, 0.17]));
@@ -314,12 +457,18 @@ export class Renderer {
     p.i('uShadows', shadows ? 1 : 0); p.f('uShadowTexel', 1 / this.shadowSize); p.f('uTime', this.time);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.shadowTex); p.i('uShadowMap', 0);
     p.f('uInflate', 0);
+    const nLights = lit ? this._gatherLights(camera, env) : 0;
+    p.i('uLightCount', nLights);
+    if (nLights) { gl.uniform4fv(p.u('uLightPos'), this.lightU.pos); gl.uniform4fv(p.u('uLightColor'), this.lightU.col); gl.uniform4fv(p.u('uLightSpot'), this.lightU.spot); }
+    p.i('uUseAO', useAO ? 1 : 0); p.f('uAOStrength', env.aoStrength ?? 1); p.v2('uScreen', [this.width, this.height]);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, useAO ? this.ao2Tex : this.identityJoints); p.i('uAO', 2);
+    p.f('uFogHeight', o.fog === false ? 0 : env.fogHeight || 0);
     const shadeMode = SHADING[shading] ?? 0;
     const xray = !!o.xray;
     const drawOpaque = shading !== 'wireframe';
     if (drawOpaque) {
       if (xray) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); }
-      const sorted = xray ? meshes : meshes.filter((m) => !(m.material.opacity < 1)).concat(meshes.filter((m) => m.material.opacity < 1));
+      const sorted = xray ? visible : visible.filter((m) => !(m.material.opacity < 1)).concat(visible.filter((m) => m.material.opacity < 1));
       for (const m of sorted) {
         const mat = m.material;
         const transparent = xray || mat.opacity < 1;
@@ -330,7 +479,7 @@ export class Renderer {
         p.i('uShading', m.userData.shading ?? shadeMode);
         if (m.userData.flatColor) p.v4('uFlatColor', m.userData.flatColor);
         this._bindMesh(p, m);
-        this._draw(m.geometry);
+        this._drawMesh(m);
         if (transparent && !xray) gl.disable(gl.BLEND);
       }
       gl.depthMask(true); gl.disable(gl.BLEND);
@@ -344,7 +493,7 @@ export class Renderer {
         const sel = o.selected && o.selected.has(m);
         p.v4('uFlatColor', sel ? [1, 0.45, 0.1, 1] : shading === 'wireframe' ? [0.05, 0.05, 0.05, 0.9] : [0.02, 0.02, 0.02, 0.35]);
         if (o.wireOverlay && shading !== 'wireframe') { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); }
-        this._bindMesh(p, m); this._draw(m.geometry, true);
+        this._bindMesh(p, m); this._drawMesh(m, true);
       }
       gl.disable(gl.BLEND);
     }
@@ -393,9 +542,9 @@ export class Renderer {
         if (it.depthTest === false) gl.disable(gl.DEPTH_TEST); else gl.enable(gl.DEPTH_TEST);
         if (it.color[3] < 1) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); } else gl.disable(gl.BLEND);
         gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
-        p.m4('uModel', it.matrix); p.m4('uLocal', IDENTITY); p.i('uSkinned', 0);
+        p.m4('uModel', it.matrix); p.m4('uLocal', IDENTITY); p.i('uSkinned', 0); p.i('uInstanced', 0);
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.identityJoints); p.i('uJointTex', 1);
-        p.i('uShading', it.shading === 'flat' ? 2 : 1); p.i('uPattern', 0); p.v3('uBaseColor', it.color.slice(0, 3)); p.f('uOpacity', it.color[3]); p.v4('uFlatColor', it.color); p.f('uRoughness', 0.5); p.i('uDoubleSided', 0);
+        p.i('uShading', it.shading === 'flat' ? 2 : 1); p.i('uLightCount', 0); p.i('uPattern', 0); p.v3('uBaseColor', it.color.slice(0, 3)); p.f('uOpacity', it.color[3]); p.v4('uFlatColor', it.color); p.f('uRoughness', 0.5); p.i('uDoubleSided', 0);
         this._draw(it.geometry, !!it.wire);
       }
       gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
@@ -438,6 +587,19 @@ export class Renderer {
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.b1Tex); pp.i('uBloom', 1);
     pp.f('uBloomStrength', bloom ? this.settings.bloomStrength : 0);
     pp.f('uExposure', (env.exposure ?? 1) * this.settings.exposure); pp.f('uVignette', lit ? this.settings.vignette : 0); pp.f('uGrain', lit ? this.settings.grain : 0);
+    let rays = 0, sunUV = [0.5, 0.5];
+    if (bloom && this.settings.godRays && (env.godRays || 0) > 0) {
+      const sp = [camera.position[0] + env.sunDirection[0] * 500, camera.position[1] + env.sunDirection[1] * 500, camera.position[2] + env.sunDirection[2] * 500];
+      const v = [sp[0], sp[1], sp[2], 1], M = camera.viewProj;
+      const cw = M[3] * v[0] + M[7] * v[1] + M[11] * v[2] + M[15];
+      if (cw > 0) {
+        const cx = (M[0] * v[0] + M[4] * v[1] + M[8] * v[2] + M[12]) / cw, cy = (M[1] * v[0] + M[5] * v[1] + M[9] * v[2] + M[13]) / cw;
+        sunUV = [cx * 0.5 + 0.5, cy * 0.5 + 0.5];
+        const off = Math.max(0, Math.max(Math.abs(cx), Math.abs(cy)) - 1);
+        rays = env.godRays * Math.max(0, 1 - off * 1.5);
+      }
+    }
+    pp.v2('uSunUV', sunUV); pp.f('uGodRays', rays * 1.6); pp.v3('uRayColor', env.rayColor || [1, 0.85, 0.6]);
     pp.f('uTime', this.time); pp.i('uTonemap', 1); pp.v2('uTexel', [1 / this.width, 1 / this.height]); pp.i('uFXAA', this.msaa < 2 || this.settings.fxaa ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -469,7 +631,7 @@ export class Renderer {
     const col = (id) => [(id & 255) / 255, ((id >> 8) & 255) / 255, ((id >> 16) & 255) / 255, 1];
     const draw = (it) => {
       p.v4('uFlatColor', col(it.id));
-      if (it.mesh) this._bindMesh(p, it.mesh); else { p.m4('uModel', it.matrix); p.m4('uLocal', IDENTITY); p.i('uSkinned', 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.identityJoints); p.i('uJointTex', 1); }
+      if (it.mesh) this._bindMesh(p, it.mesh); else { p.m4('uModel', it.matrix); p.m4('uLocal', IDENTITY); p.i('uSkinned', 0); p.i('uInstanced', 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.identityJoints); p.i('uJointTex', 1); }
       this._draw(it.mesh ? it.mesh.geometry : it.geometry);
     };
     for (const it of items) if (!it.onTop) draw(it);

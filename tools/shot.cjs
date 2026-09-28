@@ -10,7 +10,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
   await page.goto(url);
   await page.waitForTimeout(+wait);
   if (js) { await page.evaluate(js); await page.waitForTimeout(1500); }
-  await page.screenshot({ path: out });
+  await page.screenshot({ path: out, ...(/\.jpe?g$/.test(out) ? { quality: 80 } : {}) });
   console.log(logs.slice(0, 30).join('\n'));
   await browser.close();
 })();
