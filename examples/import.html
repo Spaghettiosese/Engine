@@ -68,7 +68,10 @@ let hours = 16.5;
 $('tod').oninput = (e) => { hours = +e.target.value; $('todOut').textContent = hhmm(hours); }; $('todOut').textContent = hhmm(hours);
 $('tLamp').onchange = (e) => lamp.toggle(e.target.checked);
 $('tFire').onchange = (e) => { if (e.target.checked) campfire = fire.addSource([-1.3, 0.05, -1.4], { radius: 0.3 }); else if (campfire) { fire.remove(campfire); campfire = null; } };
-load('../assets/cowboy.glb', 'cowboy.glb (exported by ShapeForge)');
+// the sample model; some hosts don't serve .glb, so fall back to a base64 text copy
+fetch('../assets/cowboy.glb').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
+  .catch(() => fetch('../assets/cowboy.glb.txt').then((r) => r.text()).then((t) => Uint8Array.from(atob(t.trim()), (c) => c.charCodeAt(0)).buffer))
+  .then((b) => load(b, 'cowboy.glb (exported by ShapeForge)'), () => ($('info').textContent = 'Sample model not found; drop a .glb file.'));
 E.runLoop((dt) => {
   E.applyTimeOfDay(env, hours);
   if (model) model.update(dt);
