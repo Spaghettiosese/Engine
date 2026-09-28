@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "start": "npx --yes http-server -p 8080 -c-1 .",
-    "test": "node tools/test-geometry.mjs && node tools/test-animation.mjs && node tools/test-export.mjs",
+    "test": "node tools/test-geometry.mjs && node tools/test-animation.mjs && node tools/test-export.mjs && node tools/test-weapon.mjs",
     "build:assets": "node tools/build-assets.mjs",
     "build:artifact": "node tools/build-artifact.mjs"
   }

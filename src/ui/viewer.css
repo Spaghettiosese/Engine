@@ -80,3 +80,7 @@ input[type=range] { accent-color: var(--brass); width: 100%; }
   .brand em { display: none; }
   .events { display: none; }
 }
+body.fp .fp-hide { display: none !important; }
+body.fp canvas#view { cursor: crosshair; }
+body.fp .timeline { top: 64px; bottom: auto; left: 332px; right: 200px; }
+@media (max-width: 720px) { body.fp .timeline { top: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 8px; } }

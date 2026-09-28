@@ -57,6 +57,21 @@ Walk and Run share the `locomotion` sync group, so crossfading between them keep
 
 Walk and Chase share the `grinner` sync group. The character file declares `roles` (`idle`, `walk`, `run: 'Chase'`, `crawl`), which the Viewer's WASD blend tree reads, so Shift makes it chase.
 
+## M1 Garand, first person
+
+`src/content/garand.js` is a first-person rig: the camera sits at the rig origin looking down +Z. It holds a US soldier's arms (M1941 field jacket, cuffs with buttons, an A-11 field watch on the left wrist, two-joint fingers and thumbs) and an M1 Garand made from shapes. The rifle has a walnut buttstock, wrist and forestock with handguards, a parkerized receiver, rear sight with aperture and drums, barrel, gas cylinder, front sight, bands, trigger guard and a leather sling. The **operating rod**, **bolt**, **en-bloc clip** (two steel plates and eight brass .30-06 rounds with copper bullets) and **muzzle flash** each have their own bone.
+
+| Action | Length | What happens |
+| --- | --- | --- |
+| Fire | 1.00 s | The last round: muzzle flash (bloom), recoil, the action cycles and locks open, and the empty clip pings out |
+| Reload | 3.00 s | The rifle cants toward you, the right hand fetches a clip from the belt, thumbs it into the receiver, the bolt slams home, the hand snaps clear (no "M1 thumb"), then the heel of the hand slaps the op rod forward |
+| Inspect | 4.40 s | The rifle turns to show its right side, the op rod is pulled back to check the chamber and released, then the rifle turns to show its left side and top |
+| Idle | 3.00 s | Breathing sway; the support hand resettles its grip |
+
+The actions are authored with the new **choreography layer** (`src/engine/choreo.js`). Each channel has a few key poses: the weapon transform, wrist targets attached to the rifle or free in space, finger poses, the clip's attachment, bolt and op-rod travel, and the flash. Attached keys are blended in world space, so the clip passes from belt to hand to receiver without popping. The arms are solved with two-bone IK every frame, and the result is baked into ordinary editable clips at 30–60 fps. `tools/test-weapon.mjs` checks the rifle's state after each action (loaded, bolt locked open, clip ejected or seated) and that the support hand never leaves the handguard.
+
+In the **Viewer**, choose *M1 Garand (first person)*. Drag to look around; press **F** to fire (it chains into the reload), **R** to reload and **I** to inspect. The rig's `firstPerson` block in its JSON (field of view, eye height, action names, what plays next) is all a game needs to drive it the same way.
+
 ---
 
 ## Engine API (`src/engine`)
@@ -96,6 +111,7 @@ runLoop((dt) => {
 | `particles.js` | Soft point-sprite particles (footstep dust) |
 | `io.js` | Export binary glTF 2.0 (skin, PBR factors, every clip) and OBJ (posed) |
 | `debug.js` | Skeleton lines, octahedral bone meshes, ghost posing |
+| `choreo.js` | Choreography: key-pose channels with attachments, world-space blending, baking to clips |
 
 ### Blending locomotion from a speed value
 
@@ -178,8 +194,9 @@ Additional features:
 index.html  editor.html  viewer.html
 assets/cowboy.json        baked Cowboy (npm run build:assets)
 assets/grinner.json       baked Grinner
+assets/m1-garand.json     baked first-person M1 Garand rig
 src/engine/               the engine
-src/content/              cowboy.js, monster.js (the Grinner), scenery.js (desert set)
+src/content/              cowboy.js, monster.js (the Grinner), garand.js (first-person M1), scenery.js (desert set)
 src/editor/               Studio: core model, viewport, panels, dope sheet, widgets
 src/viewer/viewer.js      Animation Viewer
 src/ui/                   page styles

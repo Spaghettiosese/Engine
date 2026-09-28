@@ -3,6 +3,7 @@
 import * as E from '../engine/index.js';
 import { createCowboy } from '../content/cowboy.js';
 import { createGrinner } from '../content/monster.js';
+import { createGarand } from '../content/garand.js';
 import { westernSet } from '../content/scenery.js';
 
 const $ = (id) => document.getElementById(id);
@@ -29,7 +30,15 @@ function loadCharacter(ch) {
   ghost = new E.GhostPoser(character.skeleton);
   clipNames = [...character.mixer.clips.keys()];
   character.mixer.on(onEvent);
-  const first = clipNames.includes('Walk') ? 'Walk' : clipNames[0];
+  // first-person rigs (weapons) get an eye-level camera and game-style controls
+  state.fp = character.def.firstPerson || null;
+  document.body.classList.toggle('fp', !!state.fp);
+  controls.enabled = !state.fp;
+  camera.fov = (state.fp ? state.fp.fov : 40) * Math.PI / 180;
+  camera.near = state.fp ? 0.01 : 0.05;
+  state.fpYaw = 0; state.fpPitch = 0;
+  if (state.fp) { setMode('inplace'); $('modeHint').textContent = 'First person: drag to look around. F fires the last round, R reloads, I inspects.'; $('modeHint').classList.remove('fp-hide'); }
+  const first = state.fp ? state.fp.actions.idle : clipNames.includes('Walk') ? 'Walk' : clipNames[0];
   if (first) character.play(first, { fade: 0 });
   buildClipList();
   const bones = character.skeleton.length, parts = character.parts.reduce((a, p) => a + p.meshes.length, 0);
@@ -51,7 +60,8 @@ function buildClipList() {
 }
 function playClip(n) {
   if (state.mode === 'play') setMode('roam');
-  character.play(n, { fade: state.fade });
+  const c = character.mixer.clips.get(n);
+  character.play(n, { fade: state.fp ? 0.12 : state.fade, restart: !!(c && !c.loop) });
   state.paused = false; updatePlayBtn();
 }
 
@@ -113,7 +123,7 @@ $('fileInput').onchange = async (e) => {
   try { const def = JSON.parse(await f.text()); loadCharacter(new E.Character(def)); const o = document.createElement('option'); o.textContent = def.name || f.name; o.value = 'file'; $('modelSelect').appendChild(o); $('modelSelect').value = 'file'; }
   catch (err) { $('modelMeta').textContent = 'Could not load that file: ' + err.message; }
 };
-$('modelSelect').onchange = (e) => { if (e.target.value === 'cowboy') loadCharacter(createCowboy()); if (e.target.value === 'grinner') loadCharacter(createGrinner()); if (e.target.value === 'studio' && handoff) loadCharacter(new E.Character(handoff)); };
+$('modelSelect').onchange = (e) => { if (e.target.value === 'cowboy') loadCharacter(createCowboy()); if (e.target.value === 'grinner') loadCharacter(createGrinner()); if (e.target.value === 'garand') loadCharacter(createGarand()); if (e.target.value === 'studio' && handoff) loadCharacter(new E.Character(handoff)); };
 function exportMsg(ok, name) { $('exportMsg').textContent = ok ? `Saved ${name}` : 'Downloads are blocked here. Open the viewer from the repository to export.'; }
 $('exportGLB').onclick = () => { const bytes = E.exportGLB(character); exportMsg(E.download(character.name.toLowerCase() + '.glb', bytes, 'model/gltf-binary'), character.name.toLowerCase() + '.glb (' + (bytes.length / 1024).toFixed(0) + ' KB)'); };
 $('exportJSON').onclick = () => exportMsg(E.download(character.name.toLowerCase() + '.json', JSON.stringify(character.toJSON()), 'application/json'), character.name.toLowerCase() + '.json');
@@ -140,12 +150,21 @@ window.addEventListener('keydown', (e) => {
   if (/^[1-9]$/.test(k) && clipNames[+k - 1] && state.mode !== 'play') playClip(clipNames[+k - 1]);
   if (k === ' ') { e.preventDefault(); state.paused = !state.paused; updatePlayBtn(); }
   if (k === 'c' && state.mode === 'play') state.crawl = !state.crawl;
+  if (state.fp) { const a = state.fp.actions; const map = { f: a.fire, r: a.reload, i: a.inspect }; if (map[k]) playClip(map[k]); }
   if (state.paused && (k === 'arrowright' || k === 'arrowleft') && state.mode !== 'play') {
     const a = character.mixer.dominant(); if (a) { a.time = ((a.time + (k === 'arrowright' ? 1 : -1) / 30) % a.clip.duration + a.clip.duration) % a.clip.duration; }
   }
 });
 window.addEventListener('keyup', (e) => state.keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => state.keys.clear());
+
+// first-person look: drag on the view
+{
+  let look = null;
+  canvas.addEventListener('pointerdown', (e) => { if (state.fp) { look = [e.clientX, e.clientY]; canvas.setPointerCapture(e.pointerId); } });
+  canvas.addEventListener('pointermove', (e) => { if (!look || !state.fp) return; state.fpYaw -= (e.clientX - look[0]) * 0.15; state.fpPitch = E.clamp(state.fpPitch + (e.clientY - look[1]) * 0.15, -60, 60); look = [e.clientX, e.clientY]; });
+  canvas.addEventListener('pointerup', () => (look = null));
+}
 
 // ------------------------------------------------------------------ simulation
 function updateRoam(dt) {
@@ -230,7 +249,17 @@ function frame(now) {
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
   const sdt = state.paused ? 0 : dt * state.speed;
   character.mixer.timeScale = 1;
-  if (state.mode === 'roam') updateRoam(sdt);
+  if (state.fp) {
+    // eye-level camera; the rig turns with the view (the weapon is a viewmodel)
+    const eye = state.fp.eyeHeight || 1.62;
+    character.position.set([0, eye, 0]);
+    E.quat.fromEuler(character.rotation, state.fpPitch, state.fpYaw, 0);
+    const a = character.mixer.dominant();
+    if (a && !a.clip.loop && a.weight > 0.9 && a.time >= a.clip.duration - 1e-3 && !state.paused) {
+      const next = (state.fp.after || {})[a.clip.name] || state.fp.actions.idle;
+      playClip(next);
+    }
+  } else if (state.mode === 'roam') updateRoam(sdt);
   else if (state.mode === 'play') updatePlay(sdt);
   else { character.position.set([0, 0, 0]); character.setEuler(0, state.turntable ? (now / 1000) * 25 : 0, 0); }
   if (state.turntable && state.mode !== 'inplace') controls.rotate(dt * 0.35, 0);
@@ -245,8 +274,14 @@ function frame(now) {
     const sk = character.skeleton, i = sk.boneIndex(fb);
     tgt = E.vec3.transformMat4([0, 0, 0], E.vec3.lerp([0, 0, 0], sk.worldHead(i), sk.worldTail(i), 0.6), character.world);
   }
-  if (state.follow !== false) E.vec3.lerp(controls.target, controls.target, tgt, Math.min(1, dt * 5));
-  controls.update(dt); controls.apply();
+  if (state.fp) {
+    character.updateWorld(null);
+    E.vec3.transformMat4(camera.position, [0, 0, 0], character.world);
+    E.vec3.transformMat4(camera.target, [0, 0, 1], character.world);
+  } else {
+    if (state.follow !== false) E.vec3.lerp(controls.target, controls.target, tgt, Math.min(1, dt * 5));
+    controls.update(dt); controls.apply();
+  }
   scene.environment.shadowCenter = [hips[0], 1, hips[2]]; scene.environment.shadowRadius = 7;
   const lines = [];
   if (state.skeleton) lines.push({ data: E.skeletonLines(character.skeleton, character.world), depthTest: false });

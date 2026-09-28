@@ -193,6 +193,15 @@ Surf pattern(Surf s){
     n = mix(0.5, n, g);
     s.albedo *= 0.75 + 0.45*n;
     s.h = n; s.bump = 0.3*g; s.rough = clamp(s.rough - n*0.2, 0.2, 1.0);
+  } else if(uPattern==14){ // walnut: grain streaks running along the part's Z axis + flame figure
+    float g = aaFade(fw*6.0);
+    float streak = fbm(vec3(rp.x*6.0, rp.y*6.0, rp.z*0.35));
+    float fig = fract((rp.x*1.2 + rp.y*1.6)*3.0 + fbm(rp*vec3(1.5,1.5,0.25))*2.5);
+    float pore = vnoise(vec3(rp.x*40.0, rp.y*40.0, rp.z*2.0));
+    s.albedo = mix(s.albedo, uPatternColor, (smoothstep(0.35,0.8,streak)*0.55 + smoothstep(0.55,1.0,fig)*0.3*g)*k);
+    s.albedo *= 0.94 + 0.1*mix(0.5, pore, g);
+    s.rough = clamp(s.rough + (streak-0.5)*0.2, 0.1, 1.0);
+    s.h = streak*0.25 + pore*0.08*g; s.bump = 0.15;
   } else if(uPattern==13){ // eye: iris + pupil around +Z of the rest normal
     float r = length(vRestN.xy);
     float z = vRestN.z;

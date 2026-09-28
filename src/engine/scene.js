@@ -3,7 +3,7 @@ import { vec3, quat, mat4, DEG, hexToRGB } from './math.js';
 
 let NEXT_ID = 1;
 
-export const PATTERNS = ['none', 'fabric', 'denim', 'leather', 'metal', 'wood', 'skin', 'plaid', 'stripes', 'checker', 'dirt', 'felt', 'hair', 'eye'];
+export const PATTERNS = ['none', 'fabric', 'denim', 'leather', 'metal', 'wood', 'skin', 'plaid', 'stripes', 'checker', 'dirt', 'felt', 'hair', 'eye', 'walnut'];
 
 export class Material {
   constructor(o = {}) {

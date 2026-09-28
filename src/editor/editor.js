@@ -7,6 +7,7 @@ import { renderOutliner, renderProperties } from './panels.js';
 import { h, showMenu, closeMenus, dialog, toast } from './widgets.js';
 import { cowboyDefinition } from '../content/cowboy.js';
 import { grinnerDefinition } from '../content/monster.js';
+import { garandDefinition } from '../content/garand.js';
 
 const $ = (id) => document.getElementById(id);
 const ed = new Editor();
@@ -160,6 +161,7 @@ function addMenuItems() {
     '-',
     { label: 'Armature', icon: '🦴', sub: [
       { label: 'Humanoid Rig (bones only)', icon: '🦴', run: () => { const o = ed.addArmature(ed.humanoidRig()); ed.select(o); ed.commit('Add Rig'); } },
+      { label: 'M1 Garand (first-person rig)', icon: '🎯', run: () => { const o = ed.addArmature(garandDefinition()); o.transform.position = [0, 1.62, 0]; ed.applyTransform(o); ed.select(o); ed.commit('Add M1 Garand'); tl.fitView(); vp.frameSelected(); } },
       { label: 'Grinner (monster)', icon: '👹', run: () => { const o = ed.addArmature(grinnerDefinition()); o.transform.position = [ed.objects.filter((x) => x.kind === 'armature').length * 1.2 - 1.2, 0, 0]; ed.applyTransform(o); ed.select(o); ed.commit('Add Grinner'); tl.fitView(); } },
       { label: 'Cowboy Character', icon: '🤠', run: () => { const o = ed.addArmature(cowboyDefinition()); o.transform.position = [ed.objects.filter((x) => x.kind === 'armature').length * 1.2 - 1.2, 0, 0]; ed.applyTransform(o); ed.select(o); ed.commit('Add Cowboy'); tl.fitView(); } },
     ] },

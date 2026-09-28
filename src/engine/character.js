@@ -110,6 +110,6 @@ export class Character extends Node {
   toJSON() {
     const mats = {};
     for (const [k, m] of this.materials) { const j = m.toJSON(); delete j.name; mats[k] = j; }
-    return { format: 'shapeforge-character', version: 1, name: this.name, skeleton: this.def.skeleton, materials: mats, parts: this.def.parts, ...(this.def.roles ? { roles: this.def.roles } : {}), clips: [...this.mixer.clips.values()].map((c) => c.toJSON()) };
+    return { format: 'shapeforge-character', version: 1, name: this.name, skeleton: this.def.skeleton, materials: mats, parts: this.def.parts, ...(this.def.roles ? { roles: this.def.roles } : {}), ...(this.def.firstPerson ? { firstPerson: this.def.firstPerson } : {}), clips: [...this.mixer.clips.values()].map((c) => c.toJSON()) };
   }
 }
