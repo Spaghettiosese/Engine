@@ -22,6 +22,9 @@ export * from './ragdoll.js';
 export * from './animgraph.js';
 export * from './pathtracer.js';
 export * from './decals.js';
+export * from './fire.js';
+export * from './flashlight.js';
+export * from './gltf.js';
 
 // Minimal game loop helper: calls update(dt, time) then render every frame.
 export function runLoop(update) {

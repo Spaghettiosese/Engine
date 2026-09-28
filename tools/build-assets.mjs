@@ -13,3 +13,15 @@ console.log('wrote assets/grinner.json', g.parts.length, 'parts,', g.clips.lengt
 const m1 = garandDefinition();
 writeFileSync(new URL('../assets/m1-garand.json', import.meta.url), JSON.stringify({ format: 'shapeforge-character', version: 1, ...m1 }));
 console.log('wrote assets/m1-garand.json', m1.parts.length, 'parts,', m1.clips.length, 'clips:', m1.clips.map((c) => `${c.name} (${c.duration}s)`).join(', '));
+// V4: the Cowboy as a standard glTF binary (a handful of clips) for the Model Import example
+{
+  const { Character } = await import('../src/engine/character.js');
+  const { exportGLB } = await import('../src/engine/io.js');
+  const keep = ['Idle', 'Walk', 'Run', 'Wave', 'Quickdraw'];
+  const d = cowboyDefinition();
+  const c = new Character({ ...d, clips: d.clips.filter((k) => keep.includes(k.name)) }, { detail: 1 });
+  c.updateWorld(null);
+  const glb = exportGLB(c, { fps: 24 });
+  writeFileSync(new URL('../assets/cowboy.glb', import.meta.url), glb);
+  console.log('wrote assets/cowboy.glb', (glb.length / 1e6).toFixed(1), 'MB,', keep.length, 'animations');
+}

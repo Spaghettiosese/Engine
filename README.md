@@ -20,6 +20,35 @@ ES modules don't load from `file://`, so open the pages through a local server.
 
 ---
 
+## What's new in V4
+
+The engine stays in plain JavaScript (no build step), with WebGPU planned as the main backend. This release is focused:
+
+- **More realistic characters**:
+  - Meshes are tessellated about 1.4× denser by default (`Character(def, { detail })`, `setDefaultDetail()`; lower it for crowds).
+  - Skin uses a subsurface-scattering approximation: red light wraps further round the terminator, thin parts glow when backlit, and a second specular lobe adds sheen.
+  - The Cowboy gained cheekbones, a brow ridge, a nose bridge and nostrils, lips and a chin.
+- **glTF 2.0 import** (`loadGLTF(url | ArrayBuffer)`):
+  - Supports GLB and .gltf files: the node hierarchy, meshes, PBR materials with base-colour and normal textures, skins with any rest pose, and animations (LINEAR, STEP and CUBICSPLINE) with crossfades.
+  - This is the route for scanned or sculpted characters. A round trip through the engine's own exporter reproduces a posed Walk within 0.06 mm.
+  - The Model Import example (`examples/import.html`) takes drag-and-drop files.
+- **Textures**: `Material.map` and `Material.normalMap` (a `Texture` from any image), mipmapped with anisotropic filtering. The normal-map tangent frame comes from screen-space derivatives.
+- **Physical lights**:
+  - Brightness: `new Light('spot', { lumens: 600, physical: true })`, `setLumens()`, `setCandela()` and `light.luxAt(point)`. `physical: true` gives true inverse-square falloff.
+  - Beam profiles: `profile: 'flashlight' | 'lantern' | 'bare' | 'smooth'`, used in both the lit and the volumetric passes.
+- **Flashlight** (`new Flashlight({ lumens, angle, drain })`):
+  - A hand-held model with a beam pattern (hot centre, reflector ring, spill) and a volumetric beam.
+  - Its battery drains; a weak battery dims and stutters, and an empty one switches off.
+  - `aim()` and `toggle()` control it, and a socket attaches it to a hand.
+- **Fire and smoke** (`new FireSystem(scene)`):
+  - Anything registered with `fire.add(node, { fuel, ignition, radius })` can burn. Burning objects heat their neighbours (inverse-square, pushed downwind and upward), so fire spreads by itself.
+  - Fires grow, use up their fuel, char their materials to soot with glowing embers, then die to smouldering smoke.
+  - Flames are additive particles, and dark smoke rises and drifts with the wind. `addSmoke()` makes chimneys, and `addSource()` makes campfires and torches.
+  - A pool of flickering lights follows the biggest fires.
+- **Particles**: colour over lifetime, size growth, buoyancy, wind, and additive blending for fire and sparks. `renderer.render({ particles: [...] })` takes several systems at once.
+- **Fixed**: frustum culling tested a character's body parts at their bind-pose position, which culled the head and hands in close-ups. It now bounds the posed skeleton.
+- **Frontier Town**: L switches the flashlight on and off, and B strikes a match. The woodpile and hay by the campfire burn and spread, and the chimneys smoke.
+
 ## What's new in V3.1
 
 - **Showdown** (`examples/shootout.html`): a third-person shooter. **Target Practice** gives you 60 seconds of bottles that shatter, cans that fly and steel plates that swing on hinges. **Outlaw Showdown** is three waves of outlaws who advance, take aim and shoot back. The game has pointer-lock mouse look with a drag fallback, an over-the-shoulder aim camera with depth of field, a revolver-cylinder ammo display, hit markers and slow motion on the last kill of a wave.

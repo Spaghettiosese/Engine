@@ -8,6 +8,7 @@ import * as E from '../src/engine/index.js';
 import { createCowboy } from '../src/content/cowboy.js';
 import { createRevolver, HAND_SOCKET, HOLSTER_SOCKET } from '../src/content/revolver.js';
 const q = new URLSearchParams(location.search);
+if (q.get('detail')) E.setDefaultDetail(+q.get('detail'));
 const list = (q.get('poses') || 'Idle@0,Walk@0.2').split(',').map((s) => s.split('@'));
 const renderer = new E.Renderer(document.getElementById('c'), { pixelRatio: 1, msaa: 2, shadowSize: 1024 });
 renderer.settings.ssao = false;
@@ -26,8 +27,9 @@ const cam = new E.Camera(); cam.fov = 30 * E.DEG;
 const d = Math.max(4, n * gap * 1.25);
 cam.position.set([0, 1.3, d]); cam.target.set([0, 0.9, 0]);
 if (q.get('cam') === 'side') cam.position.set([d, 1.3, 0]);
-if (q.get('zoom')) { const z = +q.get('zoom'); cam.position.set([cam.position[0] / z, 1.25, cam.position[2] / z]); cam.target.set([0, 1.1, 0]); }
+if (q.get('zoom')) { const z = +q.get('zoom'), ty = +(q.get('ty') || 1.1); cam.position.set([cam.position[0] / z, ty + 0.1, cam.position[2] / z]); cam.target.set([0, ty, 0]); }
 scene.environment.shadowRadius = n * 0.8 + 2;
+window.__ps = { renderer, scene, cam };
 let frames = 0; // render a few frames and stop (keeps headless screenshots fast)
 function frame() { renderer.render(scene, cam, { background: 'sky' }); if (++frames < 3 || q.get('live')) requestAnimationFrame(frame); }
 frame();

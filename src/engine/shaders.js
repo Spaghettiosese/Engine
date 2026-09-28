@@ -91,6 +91,27 @@ vec2 rainRipples(vec2 p, float t){
 }
 `;
 
+// V4 light shaping shared by the lit pass and the volumetric pass: windowed falloff
+// (inverse-square when the light is physical) and beam profiles for spots and lanterns.
+export const LIGHT_SHAPE = /* glsl */ `
+float lightShape(int i, vec3 Ll, float d2){
+  float r = uLightPos[i].w;
+  float win = clamp(1.0 - pow(d2/(r*r), 2.0), 0.0, 1.0);
+  vec4 X = uLightExtra[i];
+  float att = X.z > 0.5 ? win*win / max(d2, 0.01) : win*win / (d2 + 1.0);
+  int prof = int(X.x + 0.5);
+  if(uLightColor[i].w > 0.5){
+    float cd = dot(-Ll, uLightSpot[i].xyz), outer = uLightSpot[i].w;
+    if(prof == 1){ // flashlight: hot centre, reflector ring, soft spill
+      float u = (1.0 - cd) / max(1.0 - outer, 1e-4);
+      att *= u > 1.0 ? 0.0 : exp(-u*u*7.0) + 0.35*exp(-pow((u - 0.55)/0.09, 2.0)) + 0.16*(1.0 - smoothstep(0.7, 1.0, u));
+    } else if(prof == 3) att *= smoothstep(outer, outer + 0.006, cd);
+    else att *= smoothstep(outer, mix(outer, 1.0, 0.35), cd);
+  } else if(prof == 2) att *= mix(1.0, 0.3, smoothstep(0.15, 0.85, -Ll.y)); // lantern cap shadows the space above
+  return att;
+}
+`;
+
 export const MAIN_FS = /* glsl */ `#version 300 es
 precision highp float;
 precision highp sampler2DShadow;
@@ -113,8 +134,10 @@ uniform int uLightCount;
 uniform vec4 uLightPos[MAX_LIGHTS];   // xyz position, w range
 uniform vec4 uLightColor[MAX_LIGHTS]; // rgb * intensity, w: 0 point / 1 spot
 uniform vec4 uLightSpot[MAX_LIGHTS];  // xyz direction, w cos(outer angle)
+uniform vec4 uLightExtra[MAX_LIGHTS]; // x profile, y cos(inner angle), z physical falloff
 uniform sampler2D uAO; uniform bool uUseAO; uniform vec2 uScreen; uniform float uAOStrength;
 uniform float uFogHeight;             // height falloff (0 = uniform fog)
+uniform sampler2D uMap; uniform bool uHasMap; uniform sampler2D uNormalMap; uniform bool uHasNormalMap; uniform float uNormalScale; // V4 textures
 // V3: soft (PCSS) and contact shadows
 uniform sampler2D uShadowRaw; uniform float uShadowSoft;  // penumbra scale (0 = plain PCF)
 uniform sampler2DShadow uShadowMap2; uniform mat4 uShadowVP2; uniform bool uCascade; uniform float uShadowTexel2; // far cascade
@@ -122,6 +145,7 @@ uniform sampler2D uGBuf; uniform bool uContact; uniform mat4 uView; uniform mat4
 out vec4 outColor;
 ${NOISE}
 ${WET}
+${LIGHT_SHAPE}
 const float PI = 3.14159265;
 
 struct Surf { vec3 albedo; float rough; float metal; float h; float bump; float ao; };
@@ -416,6 +440,15 @@ void main(){
     outColor = vec4(uFlatColor.rgb*(0.35+f*1.4), uFlatColor.a*(0.25+0.75*f)); return;
   }
   Surf s = Surf(uBaseColor, uRoughness, uMetallic, 0.0, 0.0, 1.0);
+  if(uHasMap) s.albedo *= texture(uMap, vUV).rgb;
+  if(uHasNormalMap){ // tangent frame from screen-space derivatives (no tangent attribute needed)
+    vec3 dp1 = dFdx(vWorld), dp2 = dFdy(vWorld); vec2 du1 = dFdx(vUV), du2 = dFdy(vUV);
+    vec3 dp2p = cross(dp2, N), dp1p = cross(N, dp1);
+    vec3 T = dp2p * du1.x + dp1p * du2.x, B = dp2p * du1.y + dp1p * du2.y;
+    float inv = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-12));
+    vec3 tn = texture(uNormalMap, vUV).xyz * 2.0 - 1.0; tn.xy *= uNormalScale;
+    N = normalize(mat3(T * inv, B * inv, N) * tn);
+  }
   if(uPattern>0) s = pattern(s);
   float pud = 0.0;
   if(uWetness > 0.0 && uShading != 1){ // rain: porous surfaces darken, everything turns glossy, puddles mirror
@@ -452,13 +485,21 @@ void main(){
   vec3 spec = D*G*F / max(4.0*NoL*NoV, 1e-4);
   vec3 kd = (1.0-F)*(1.0-s.metal);
   vec3 diffuse = kd*s.albedo/PI;
-  float wrapL = NoL;
-  if(uPattern==6){ // skin: wrapped diffuse + warm subsurface tint
-    wrapL = max((dot(N,L)+0.45)/1.45, 0.0);
-    diffuse += s.albedo*vec3(0.35,0.08,0.04)*max(0.0,1.0-abs(dot(N,L)))*0.4/PI;
+  vec3 wrapL = vec3(NoL);
+  if(uPattern==6){ // V4 skin: subsurface scattering approximation
+    // light bleeds further round the terminator in red than in green and blue (blood under skin)
+    vec3 w = vec3(0.62, 0.32, 0.24), nl = vec3(dot(N, L));
+    wrapL = max((nl + w) / (1.0 + w), 0.0) * mix(vec3(1.0), vec3(1.0, 0.94, 0.9), 1.0 - NoL);
+    // thin parts (ears, nostrils, fingers) glow red when backlit
+    float back = pow(clamp(dot(V, -normalize(L + N*0.35)), 0.0, 1.0), 3.5);
+    diffuse += s.albedo * vec3(1.0, 0.28, 0.14) * back * 0.55 / PI;
+    // a second, sharper specular lobe for the oily sheen on skin
+    float a2s = max(s.rough*s.rough*0.3, 0.002); a2s *= a2s;
+    float D2 = a2s / (PI * pow(NoH*NoH*(a2s-1.0)+1.0, 2.0));
+    spec = spec * 0.85 + D2 * G * F * 0.15 / max(4.0*NoL*NoV, 1e-4);
   }
   if(uShading==3){ // toon
-    wrapL = smoothstep(0.0,0.05,NoL)*0.8 + smoothstep(0.5,0.55,NoL)*0.2;
+    wrapL = vec3(smoothstep(0.0,0.05,NoL)*0.8 + smoothstep(0.5,0.55,NoL)*0.2);
     spec = vec3(smoothstep(0.5,0.52,D*0.02))*(1.0-s.rough);
   }
   vec3 color = (diffuse*wrapL + spec*NoL) * uSunColor * sh;
@@ -469,9 +510,7 @@ void main(){
     float d2 = dot(Lv, Lv), r = uLightPos[i].w;
     if(d2 > r*r) continue;
     vec3 Ll = Lv * inversesqrt(max(d2, 1e-6));
-    float win = clamp(1.0 - pow(d2/(r*r), 2.0), 0.0, 1.0);
-    float att = win*win / (d2 + 1.0);
-    if(uLightColor[i].w > 0.5){ float cd = dot(-Ll, uLightSpot[i].xyz); att *= smoothstep(uLightSpot[i].w, mix(uLightSpot[i].w, 1.0, 0.35), cd); }
+    float att = lightShape(i, Ll, d2);
     float nl = max(dot(N, Ll), 0.0);
     if(nl <= 0.0 || att <= 0.0) continue;
     vec3 Hl = normalize(Ll + V);
@@ -832,8 +871,9 @@ uniform mat4 uInvView; uniform mat4 uShadowVP; uniform vec2 uTan; uniform vec3 u
 uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uDensity; uniform float uFogHeight; uniform float uSunScatter; uniform float uLightScatter;
 uniform float uMaxDist; uniform float uTime; uniform float uAniso;
 #define MAX_LIGHTS 16
-uniform int uLightCount; uniform vec4 uLightPos[MAX_LIGHTS]; uniform vec4 uLightColor[MAX_LIGHTS]; uniform vec4 uLightSpot[MAX_LIGHTS];
+uniform int uLightCount; uniform vec4 uLightPos[MAX_LIGHTS]; uniform vec4 uLightColor[MAX_LIGHTS]; uniform vec4 uLightSpot[MAX_LIGHTS]; uniform vec4 uLightExtra[MAX_LIGHTS];
 out vec4 outColor;
+${LIGHT_SHAPE}
 float h12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*0.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
 float hg(float c, float g){ float g2 = g*g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0*g*c, 1.5)); }
 void main(){
@@ -859,8 +899,7 @@ void main(){
       if(k >= uLightCount) break;
       vec3 Lv = uLightPos[k].xyz - p; float d2 = dot(Lv, Lv), r = uLightPos[k].w;
       if(d2 > r*r) continue;
-      float win = clamp(1.0 - pow(d2/(r*r), 2.0), 0.0, 1.0), att = win*win / (d2 + 0.3);
-      if(uLightColor[k].w > 0.5){ float cd = dot(-Lv * inversesqrt(max(d2,1e-6)), uLightSpot[k].xyz); att *= smoothstep(uLightSpot[k].w, mix(uLightSpot[k].w, 1.0, 0.25), cd) * 3.0; }
+      float att = lightShape(k, Lv * inversesqrt(max(d2, 1e-6)), d2 + (uLightExtra[k].z > 0.5 ? 1.5 : 0.3)) * (uLightColor[k].w > 0.5 ? 3.0 : 1.0); // physical lights: soften the near field in fog
       L += uLightColor[k].rgb * att * uLightScatter * 0.08;
     }
     acc += L * dens * trans * dt;

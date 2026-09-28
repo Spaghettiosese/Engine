@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Model Import</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="examples.css">
+<style>.drop { position: fixed; inset: 12px; border: 2px dashed var(--brass); border-radius: 16px; display: grid; place-items: center; font-size: 22px; background: rgba(21,16,13,.6); pointer-events: none; }</style>
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Imported glTF model"></canvas>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Model Import</h1><small>ShapeForge V4 example · glTF 2.0 / GLB</small></div></div>
+  <div class="card keys"><b>Drop a .glb file</b> anywhere, or choose one. Scanned or sculpted characters from Blender, Mixamo or a photogrammetry app keep their textures, skin and animations.</div>
+  <div class="card" style="display:grid;gap:8px">
+    <input type="file" id="file" accept=".glb,.gltf" aria-label="Choose a glTF file">
+    <div class="sel"><label for="anim">Animation</label><select id="anim"></select></div>
+    <div class="row"><label for="tod">Time</label><input id="tod" type="range" min="5" max="21" step="0.05" value="16.5"><output id="todOut"></output></div>
+    <div class="toggles"><label><input type="checkbox" id="tLamp"> Flashlight</label><label><input type="checkbox" id="tFire"> Campfire</label></div>
+  </div>
+  <div class="card keys" id="info" aria-live="polite">Loading the sample…</div>
+</div>
+<div class="drop" id="drop" hidden>Drop to load</div>
+<nav class="nav"><a href="../index.html">Home</a><a href="frontier-town.html">Frontier Town</a><a href="shootout.html">Showdown</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module">
+// Loads any glTF 2.0 model with the engine's importer and shows it under the V4 lighting:
+// photometric lights, a flashlight and a campfire with smoke.
+import * as E from '../src/engine/index.js';
+const $ = (id) => document.getElementById(id);
+let renderer;
+try { renderer = new E.Renderer($('stage')); } catch (e) { $('fatal').hidden = false; $('fatal').textContent = 'Needs WebGL2. ' + e.message; throw e; }
+const scene = new E.Scene(), env = scene.environment;
+env.shadowRadius = 4; env.shadowCenter = [0, 1, 0];
+scene.add(new E.Mesh(E.plane({ width: 60, depth: 60 }), new E.Material({ color: '#8f8070', pattern: 'dirt', patternScale: 1, patternColor: '#6a5a48', roughness: 1 })));
+const camera = new E.Camera(); camera.fov = 35 * E.DEG; camera.position.set([2.4, 1.6, 3.6]); camera.target.set([0, 1, 0]);
+const controls = new E.OrbitControls(camera, $('stage'), { leftButtonOrbit: true }); controls.minDistance = 0.5;
+const fire = new E.FireSystem(scene, { maxLights: 2 });
+let campfire = null;
+const lamp = new E.Flashlight({ lumens: 350, angle: 18, drain: 0 }); scene.add(lamp); lamp.position.set([2.6, 1.9, 3.6]);
+let model = null;
+async function load(src, label) {
+  $('info').textContent = 'Loading ' + label + '…';
+  try {
+    const t0 = performance.now(), m = await E.loadGLTF(src);
+    if (model) scene.remove(model.scene);
+    model = m; scene.add(m.scene);
+    // frame it: fit the bounding box
+    m.scene.updateWorld(null);
+    const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity], p = [0, 0, 0];
+    for (const mesh of m.meshes) { const g = mesh.geometry; for (let i = 0; i < g.vertexCount; i += 9) { E.vec3.transformMat4(p, [g.positions[i * 3], g.positions[i * 3 + 1], g.positions[i * 3 + 2]], mesh.skeleton ? E.mat4.create() : mesh.world); for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p[k]); mx[k] = Math.max(mx[k], p[k]); } } }
+    const h = mx[1] - mn[1], s = h > 0 ? 1.8 / Math.max(h, mx[0] - mn[0], mx[2] - mn[2]) : 1;
+    m.scene.scale.set([s, s, s]); m.scene.position.set([-(mn[0] + mx[0]) / 2 * s, -mn[1] * s, -(mn[2] + mx[2]) / 2 * s]);
+    $('anim').innerHTML = m.animations.map((a, i) => `<option value="${i}">${a.name}</option>`).join('') || '<option>(none)</option>';
+    if (m.animations.length) m.animator.play(Math.max(0, m.animations.findIndex((a) => /idle/i.test(a.name))));
+    const tris = m.meshes.reduce((a, x) => a + x.geometry.triangleCount, 0), tex = m.materials.filter((x) => x.map).length;
+    $('info').innerHTML = `<b>${label}</b><br>${m.meshes.length} meshes · ${tris.toLocaleString()} triangles · ${m.materials.length} materials (${tex} textured)<br>${m.skins.length} skin(s), ${m.skins[0] ? m.skins[0].length + ' joints' : 'static'} · ${m.animations.length} animations · loaded in ${(performance.now() - t0).toFixed(0)} ms`;
+  } catch (e) { $('info').textContent = 'Could not load: ' + e.message; }
+}
+$('anim').onchange = (e) => model && model.animations.length && model.animator.play(+e.target.value);
+$('file').onchange = (e) => { const f = e.target.files[0]; if (f) f.arrayBuffer().then((b) => load(b, f.name)); };
+addEventListener('dragover', (e) => { e.preventDefault(); $('drop').hidden = false; });
+addEventListener('dragleave', () => ($('drop').hidden = true));
+addEventListener('drop', (e) => { e.preventDefault(); $('drop').hidden = true; const f = e.dataTransfer.files[0]; if (f) f.arrayBuffer().then((b) => load(b, f.name)); });
+const hhmm = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+let hours = 16.5;
+$('tod').oninput = (e) => { hours = +e.target.value; $('todOut').textContent = hhmm(hours); }; $('todOut').textContent = hhmm(hours);
+$('tLamp').onchange = (e) => lamp.toggle(e.target.checked);
+$('tFire').onchange = (e) => { if (e.target.checked) campfire = fire.addSource([-1.3, 0.05, -1.4], { radius: 0.3 }); else if (campfire) { fire.remove(campfire); campfire = null; } };
+load('../assets/cowboy.glb', 'cowboy.glb (exported by ShapeForge)');
+E.runLoop((dt) => {
+  E.applyTimeOfDay(env, hours);
+  if (model) model.update(dt);
+  lamp.aim([0, 1.2, 0]); lamp.update(dt);
+  fire.update(dt, camera);
+  controls.update(dt);
+  renderer.render(scene, camera, { background: 'sky', particles: fire.particles });
+});
+window.__import = { load, get model() { return model; }, lamp, fire };
+</script>
+</body>
+</html>

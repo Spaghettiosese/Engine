@@ -21,10 +21,25 @@ export class Material {
     this.sheen = o.sheen ?? 0; // cloth rim
     this.doubleSided = o.doubleSided ?? false;
     this.opacity = o.opacity ?? 1;
+    this.map = o.map || null;             // V4: base-colour texture (sRGB)
+    this.normalMap = o.normalMap || null; // V4: tangent-space normal texture
+    this.normalScale = o.normalScale ?? 1;
   }
   get patternIndex() { return Math.max(0, PATTERNS.indexOf(this.pattern)); }
   rgb(key) { return hexToRGB(this[key]); }
-  toJSON() { const o = {}; for (const k of Object.keys(this)) o[k] = this[k]; return o; }
+  toJSON() { const o = {}; for (const k of Object.keys(this)) if (k !== 'map' && k !== 'normalMap') o[k] = this[k]; return o; }
+}
+
+// An image for materials (Material.map = base colour, Material.normalMap = tangent-space
+// normals). image: ImageBitmap / HTMLImageElement / canvas, or { width, height, data } RGBA8.
+export class Texture {
+  constructor(image, { srgb = true, repeat = true, mipmaps = true, name = 'Texture' } = {}) {
+    if (!image) throw new Error('Texture needs an image');
+    this.image = image; this.srgb = srgb; this.repeat = repeat; this.mipmaps = mipmaps; this.name = name; this.version = 1;
+  }
+  get width() { return this.image.width; }
+  get height() { return this.image.height; }
+  needsUpdate() { this.version++; }
 }
 
 export class Node {
@@ -71,14 +86,46 @@ export class Mesh extends Node {
 // Local light. Point lights shine in all directions; spot lights shine down their node's
 // local -Y axis (so a lamp hanging from a bracket just works). Up to 16 are used per frame,
 // nearest to the camera first.
+//
+// Photometric units (V4): set brightness with setLumens() / setCandela() instead of the raw
+// engine `intensity`. physical: true switches to true inverse-square falloff (windowed at
+// `range`). profile shapes the beam: 'smooth' (default), 'flashlight' (hot centre, reflector
+// ring, soft spill), 'lantern' (cap shadows the top), 'bare' (hard-edged spot).
+export const LIGHT_PROFILES = ['smooth', 'flashlight', 'lantern', 'bare'];
+export const PHOTOMETRIC = { scale: 0.02 }; // engine intensity per candela (tuned so night scenes read like a camera at night)
+export function lumensToCandela(lumens, type = 'point', angleDeg = 45) {
+  if (type !== 'spot') return lumens / (4 * Math.PI);
+  const half = (Math.min(angleDeg, 89.9) * Math.PI) / 180;
+  return lumens / (2 * Math.PI * (1 - Math.cos(half)));
+}
 export class Light extends Node {
-  constructor(type = 'point', { color = '#ffc07a', intensity = 6, range = 8, angle = 45, flicker = 0 } = {}) {
+  constructor(type = 'point', { color = '#ffc07a', intensity = 6, range = 8, angle = 45, innerAngle = null, flicker = 0, profile = 'smooth', physical = false, lumens = null, candela = null } = {}) {
     super(type === 'spot' ? 'Spot Light' : 'Point Light');
     this.isLight = true;
     this.type = type;
     this.color = color; this.intensity = intensity; this.range = range; this.angle = angle;
+    this.innerAngle = innerAngle ?? angle * 0.35;
     this.flicker = flicker; // 0..1, animated by the renderer (lanterns, torches)
+    this.profile = profile; this.physical = physical;
     this.seed = Math.random() * 100;
+    if (lumens !== null) this.setLumens(lumens);
+    if (candela !== null) this.setCandela(candela);
+  }
+  setCandela(cd) { this.candela = cd; this.intensity = cd * PHOTOMETRIC.scale; return this; }
+  setLumens(lm) { this.lumens = lm; return this.setCandela(lumensToCandela(lm, this.type, this.angle)); }
+  // Illuminance in lux this light puts on a point (ignores occlusion), for gameplay and tests.
+  luxAt(point) {
+    const w = this.world, d = [point[0] - w[12], point[1] - w[13], point[2] - w[14]];
+    const d2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2], dist = Math.sqrt(d2);
+    if (dist > this.range) return 0;
+    let cd = this.intensity / PHOTOMETRIC.scale;
+    if (this.type === 'spot') {
+      const axis = vec3.normalize([0, 0, 0], vec3.transformDir([0, 0, 0], [0, -1, 0], w));
+      const c = (d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2]) / Math.max(dist, 1e-6);
+      const outer = Math.cos((this.angle * Math.PI) / 180), inner = Math.cos((this.innerAngle * Math.PI) / 180);
+      cd *= c <= outer ? 0 : c >= inner ? 1 : (c - outer) / (inner - outer);
+    }
+    return cd / Math.max(d2, 1e-4);
   }
 }
 

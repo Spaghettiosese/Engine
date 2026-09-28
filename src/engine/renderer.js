@@ -3,6 +3,7 @@
 // selection outlines, onion-skin ghosts, particles, debug lines and GPU picking.
 import * as S from './shaders.js';
 import { mat4, vec3, hexToRGB, srgbToLinear } from './math.js';
+import { LIGHT_PROFILES } from './scene.js';
 
 const IDENTITY = mat4.create();
 
@@ -103,7 +104,7 @@ export class Renderer {
       let v; do { v = [Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random()]; } while (Math.hypot(...v) > 1 || Math.hypot(...v) < 0.1);
       const s = 0.1 + 0.9 * (i / 16) ** 2; this.aoKernel.set(v.map((x) => x * s), i * 3);
     }
-    this.lightU = { pos: new Float32Array(64), col: new Float32Array(64), spot: new Float32Array(64) };
+    this.lightU = { pos: new Float32Array(64), col: new Float32Array(64), spot: new Float32Array(64), extra: new Float32Array(64) };
     this.geoCache = new WeakMap();
     this.jointTex = new WeakMap();
     this.emptyVAO = gl.createVertexArray();
@@ -338,6 +339,9 @@ export class Renderer {
   }
   // Bounding sphere of a drawable in world space (for frustum culling)
   _sphere(m) {
+    // skinned parts: bound the whole posed skeleton (parts move with their bones, so their
+    // bind-pose bounds say little about where they are now)
+    if (m.skeleton && m.skinRoot && m.skeleton.world && m.skeleton.bones) return this._skelSphere(m.skeleton, m.skinRoot.world);
     const g = m.geometry;
     if (!g._bs || g._bs.v !== g.version) {
       const b = g.bounds(), c = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
@@ -359,6 +363,16 @@ export class Renderer {
     const s = Math.max(Math.hypot(M[0], M[1], M[2]), Math.hypot(M[4], M[5], M[6]), Math.hypot(M[8], M[9], M[10]));
     return { c: wc, r: r * s * extra + (m.skeleton ? 0.3 : 0) };
   }
+  _skelSphere(sk, W) {
+    this._skelSpheres = this._skelSpheres || new WeakMap();
+    let e = this._skelSpheres.get(sk);
+    if (e && e.v === sk.version && e.w0 === W[12] && e.w1 === W[13] && e.w2 === W[14] && e.w3 === W[0]) return e.s;
+    const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity], p = [0, 0, 0];
+    for (let i = 0; i < sk.length; i++) { vec3.transformMat4(p, sk.worldHead(i), W); for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p[k]); mx[k] = Math.max(mx[k], p[k]); } }
+    const s = { c: [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2], r: vec3.dist(mn, mx) / 2 + 0.35 }; // + margin for flesh, hats, props
+    this._skelSpheres.set(sk, { v: sk.version, w0: W[12], w1: W[13], w2: W[14], w3: W[0], s });
+    return s;
+  }
   _frustum(vp) {
     const P = [];
     for (const [a, sgn] of [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1]]) {
@@ -368,6 +382,7 @@ export class Renderer {
     return P;
   }
   _visible(m, planes) {
+    if (m.frustumCulled === false) return true;
     const s = this._sphere(m);
     for (const p of planes) if (p[0] * s.c[0] + p[1] * s.c[1] + p[2] * s.c[2] + p[3] < -s.r) return false;
     return true;
@@ -383,6 +398,7 @@ export class Renderer {
       U.col.set([col[0] * l.intensity * f, col[1] * l.intensity * f, col[2] * l.intensity * f, l.type === 'spot' ? 1 : 0], i * 4);
       const d = vec3.normalize([0, 0, 0], vec3.transformDir([0, 0, 0], [0, -1, 0], l.world));
       U.spot.set([d[0], d[1], d[2], Math.cos((l.angle * Math.PI) / 180)], i * 4);
+      U.extra.set([Math.max(0, LIGHT_PROFILES.indexOf(l.profile || 'smooth')), Math.cos(((l.innerAngle ?? l.angle * 0.35) * Math.PI) / 180), l.physical ? 1 : 0, 0], i * 4);
     });
     return env.lights === false ? 0 : withD.length;
   }
@@ -393,9 +409,34 @@ export class Renderer {
     else { gl.drawElements(gl.TRIANGLES, c.count, gl.UNSIGNED_INT, 0); this.stats.triangles += c.count / 3; }
     this.stats.drawCalls++;
   }
+  // GL texture for an engine Texture (uploaded once, mipmapped, re-uploaded when version changes)
+  _glTexture(t) {
+    const gl = this.gl;
+    this.texCache = this.texCache || new WeakMap();
+    let e = this.texCache.get(t);
+    if (e && e.version === t.version) return e.tex;
+    if (!e) { e = { tex: gl.createTexture(), version: -1 }; this.texCache.set(t, e); }
+    gl.bindTexture(gl.TEXTURE_2D, e.tex);
+    const fmt = t.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;
+    if (t.image.data) gl.texImage2D(gl.TEXTURE_2D, 0, fmt, t.image.width, t.image.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, t.image.data);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, fmt, gl.RGBA, gl.UNSIGNED_BYTE, t.image);
+    const wrap = t.repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, t.mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+    if (t.mipmaps) gl.generateMipmap(gl.TEXTURE_2D);
+    const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+    e.version = t.version;
+    return e.tex;
+  }
   _setMaterial(p, m) {
     if (this._lastMat === m && this._lastProg === p) return; // sorted draws share material state
     this._lastMat = m; this._lastProg = p;
+    const gl = this.gl;
+    p.i('uHasMap', m.map ? 1 : 0); p.i('uHasNormalMap', m.normalMap ? 1 : 0);
+    if (m.map) { gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, this._glTexture(m.map)); p.i('uMap', 6); }
+    if (m.normalMap) { gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, this._glTexture(m.normalMap)); p.i('uNormalMap', 7); p.f('uNormalScale', m.normalScale ?? 1); }
     const c = matUniforms(m);
     p.v3('uBaseColor', c.base); p.f('uMetallic', m.metallic); p.f('uRoughness', m.roughness); p.v3('uEmissive', c.em);
     p.i('uPattern', m.patternIndex); p.f('uPatternScale', m.patternScale); p.v3('uPatternColor', c.pat); p.f('uPatternStrength', m.patternStrength);
@@ -544,12 +585,15 @@ export class Renderer {
     p.f('uInflate', 0);
     const nLights = lit ? this._gatherLights(camera, env) : 0;
     p.i('uLightCount', nLights);
-    if (nLights) { gl.uniform4fv(p.u('uLightPos'), this.lightU.pos); gl.uniform4fv(p.u('uLightColor'), this.lightU.col); gl.uniform4fv(p.u('uLightSpot'), this.lightU.spot); }
+    if (nLights) { gl.uniform4fv(p.u('uLightPos'), this.lightU.pos); gl.uniform4fv(p.u('uLightColor'), this.lightU.col); gl.uniform4fv(p.u('uLightSpot'), this.lightU.spot); gl.uniform4fv(p.u('uLightExtra'), this.lightU.extra); }
     p.i('uUseAO', useAO ? 1 : 0); p.f('uAOStrength', env.aoStrength ?? 1); p.v2('uScreen', [this.width, this.height]);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, useAO ? this.ao2Tex : this.identityJoints); p.i('uAO', 2);
     p.f('uFogHeight', o.fog === false ? 0 : env.fogHeight || 0);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.shadowTex); gl.bindSampler(3, this.rawSampler); p.i('uShadowRaw', 3);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, this.shadowTex2); p.i('uShadowMap2', 5);
+    // texture slots always point at real textures (unset samplers default to unit 0, the shadow map)
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, this.identityJoints); p.i('uMap', 6);
+    gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, this.identityJoints); p.i('uNormalMap', 7);
     p.m4('uShadowVP2', this.shadowVP2); p.i('uCascade', cascade && this._farReady ? 1 : 0); p.f('uShadowTexel2', 1 / this.shadowSize2);
     const soft = shadows && this.settings.softShadows ? env.shadowSoftness ?? 2.5 : 0;
     p.f('uShadowSoft', soft > 0 ? 3 * Math.tan((soft * Math.PI) / 180) : 0);
@@ -645,13 +689,18 @@ export class Renderer {
       gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
     }
     // particles
-    if (o.particles && o.particles.count) {
+    // particles: one system or several; alpha-blended systems first, additive (fire) on top
+    const systems = (Array.isArray(o.particles) ? o.particles : o.particles ? [o.particles] : []).filter((ps) => ps && ps.count).sort((a, b) => (a.additive ? 1 : 0) - (b.additive ? 1 : 0));
+    if (systems.length) {
       const pp = this.prog.particle.use();
       pp.m4('uViewProj', camera.viewProj); pp.f('uScale', this.height * 0.8);
-      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+      gl.enable(gl.BLEND); gl.depthMask(false);
       gl.bindVertexArray(this.partVAO); gl.bindBuffer(gl.ARRAY_BUFFER, this.partBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, o.particles.data.subarray(0, o.particles.count * 8), gl.DYNAMIC_DRAW);
-      gl.drawArrays(gl.POINTS, 0, o.particles.count);
+      for (const ps of systems) {
+        if (ps.additive) gl.blendFunc(gl.SRC_ALPHA, gl.ONE); else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.bufferData(gl.ARRAY_BUFFER, ps.data.subarray(0, ps.count * 8), gl.DYNAMIC_DRAW);
+        gl.drawArrays(gl.POINTS, 0, ps.count);
+      }
       gl.depthMask(true); gl.disable(gl.BLEND);
     }
     // lines
@@ -751,7 +800,7 @@ export class Renderer {
       v.f('uSunScatter', volAmt * (env.sunShafts ?? 1)); v.f('uLightScatter', volAmt * (env.lampGlow ?? 1) * 1.6);
       v.f('uMaxDist', env.volumeDistance ?? 60); v.f('uTime', this.time); v.f('uAniso', env.anisotropy ?? 0.6);
       v.i('uLightCount', nLights);
-      if (nLights) { gl.uniform4fv(v.u('uLightPos'), this.lightU.pos); gl.uniform4fv(v.u('uLightColor'), this.lightU.col); gl.uniform4fv(v.u('uLightSpot'), this.lightU.spot); }
+      if (nLights) { gl.uniform4fv(v.u('uLightPos'), this.lightU.pos); gl.uniform4fv(v.u('uLightColor'), this.lightU.col); gl.uniform4fv(v.u('uLightSpot'), this.lightU.spot); gl.uniform4fv(v.u('uLightExtra'), this.lightU.extra); }
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       blur(this.vol1Tex, this.vol2FBO, 1.6);
     }

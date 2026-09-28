@@ -21,6 +21,32 @@ const cowboy = createCowboy(); cowboy.position.set([0, 0, 30]); scene.add(cowboy
 const grinner = createGrinner(); grinner.position.set([0, 0, -60]); grinner.visible = false; scene.add(grinner);
 cowboy.play('Idle', { fade: 0 }); grinner.play('Walk', { fade: 0 });
 const particles = new E.Particles(2000);
+
+// ---------------------------------------------------------------- V4: fire, smoke and a flashlight
+const fire = new E.FireSystem(scene, { maxLights: 5 });
+fire.addSource([-3.2, 0.1, 24.5], { radius: 0.38 }); // campfire
+{ // stones round the campfire
+  const k = new E.Kit(town.palette);
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; k.box(town.palette.stone, [-3.2 + Math.cos(a) * 0.55, 0.08, 24.5 + Math.sin(a) * 0.55], [0.2, 0.16, 0.16], [0, (a * 180) / Math.PI, 0], 0.04); }
+  for (let i = 0; i < 3; i++) k.cyl(town.palette.darkWood, [-3.2, 0.08, 24.5], 0.05, 0.9, [90, i * 60, 0], 8);
+  scene.add(k.toNode('Campfire'));
+}
+// a woodpile, hay and crates: flammable, spaced so a fire can jump from one to the next
+const flammables = [];
+const crateGeo = E.box({ width: 0.7, height: 0.7, depth: 0.7, bevel: 0.03 }), hayGeo = E.box({ width: 1.1, height: 0.55, depth: 0.7, bevel: 0.08 });
+const crateMat = town.palette.deck, hayMat = new E.Material({ name: 'Hay', color: '#c9a55a', roughness: 1, pattern: 'hair', patternScale: 14, patternColor: '#8a6a2a' });
+for (const [x, z, kind] of [[4.2, 21, 'crate'], [4.9, 21.2, 'crate'], [4.5, 21.1, 'crate'], [5.6, 22.2, 'hay'], [6.4, 23.3, 'hay'], [6.8, 24.5, 'crate'], [7.2, 25.4, 'crate']]) {
+  const m = new E.Mesh(kind === 'hay' ? hayGeo : crateGeo, kind === 'hay' ? hayMat : crateMat, kind);
+  const y = kind === 'hay' ? 0.275 : 0.35; m.position.set([x, x === 4.5 ? y + 0.7 : y, z]); m.setEuler(0, x * 40, 0); scene.add(m);
+  flammables.push(fire.add(m, { radius: kind === 'hay' ? 0.55 : 0.4, fuel: kind === 'hay' ? 18 : 30, ignition: kind === 'hay' ? 1.2 : 2.6 }));
+}
+fire.onBurntOut = (b) => { b.node.scale.set([1, 0.35, 1]); b.node.position[1] *= 0.4; }; // collapses to charred embers
+// chimney smoke from a couple of roofs
+fire.addSmoke([-14, 9.2, 30], { rate: 5, size: 0.5, color: [0.5, 0.5, 0.5, 0.35] });
+fire.addSmoke([13.5, 8.6, 9], { rate: 4, size: 0.45, color: [0.5, 0.5, 0.5, 0.35] });
+const flashlight = new E.Flashlight({ lumens: 600, angle: 19, range: 28, drain: 1 / 240 });
+const flashHolder = new E.Node('Flashlight grip'); flashHolder.add(flashlight);
+cowboy.attach(flashHolder, 'hand.L', { position: [-0.012, -0.06, 0.02], rotation: [90, 0, 0] });
 const camera = new E.Camera(); camera.fov = 50 * E.DEG; camera.far = 400;
 
 const state = { hours: +$('tod').value, rate: 4, paused: false, keys: new Set(), yaw: Math.PI, speed: 0, crawl: false, camYaw: 0, camPitch: 0.28, camDist: 6.5, grinner: { mode: 'hidden', yaw: 0, target: null, cool: 0 } };
@@ -30,6 +56,12 @@ addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase(); state.keys.add(k);
   if (k === 'c') state.crawl = !state.crawl;
   if (k === 't') state.paused = !state.paused;
+  if (k === 'l') { if (flashlight.battery <= 0) flashlight.recharge(); banner(flashlight.toggle() ? 'Flashlight on' : 'Flashlight off'); }
+  if (k === 'b') { // strike a match: set fire to anything flammable close in front of you
+    const f = [cowboy.position[0] + Math.sin(state.yaw) * 1.2, 0.4, cowboy.position[2] + Math.cos(state.yaw) * 1.2];
+    const n = fire.igniteAt(f, 1.6);
+    banner(n ? 'Fire!' : 'Nothing here to burn');
+  }
   if (k === '[' || k === ']') { state.hours = (state.hours + (k === ']' ? 1 : -1) + 24) % 24; $('tod').value = state.hours; }
 });
 addEventListener('keyup', (e) => state.keys.delete(e.key.toLowerCase()));
@@ -157,9 +189,14 @@ function frame(now) {
   const want = !dir ? 0 : state.crawl ? 1 : k.has('shift') ? 2.9 : 1.15;
   const v = locomotion(cowboy, dt, dir, want, state.crawl, COWBOY_ROLES);
   cowboy.update(dt);
+  cowboy.updateWorld(scene.world);
+  flashlight.aim([camera.target[0] - (camera.position[0] - camera.target[0]) * 4, camera.target[1] - 0.3, camera.target[2] - (camera.position[2] - camera.target[2]) * 4]);
+  flashlight.update(dt);
   updateGrinner(dt);
   if (grinner.visible) grinner.update(dt);
   town.update(dt);
+  fire.wind = [0.3 + Math.sin(performance.now() / 4000) * 0.2, 0, 0.15];
+  fire.update(dt, camera);
   particles.update(dt);
   // camera: orbit behind the player, eased
   const target = [cowboy.position[0], cowboy.position[1] + (state.crawl ? 0.8 : 1.45), cowboy.position[2]];
@@ -182,7 +219,7 @@ function frame(now) {
   E.vec3.copy(camera.target, target);
   env.shadowCenter = [cowboy.position[0], 1, cowboy.position[2]];
   const rl = rain(dt, $('tRain').checked ? 1 : 0);
-  renderer.render(scene, camera, { background: 'sky', particles, shadows: state.shadows, lines: rl ? [{ data: rl }] : undefined });
+  renderer.render(scene, camera, { background: 'sky', particles: [particles, ...fire.particles], shadows: state.shadows, lines: rl ? [{ data: rl }] : undefined });
   // HUD
   fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05; hudT += dt;
   if (hudT > 0.25) {
@@ -195,4 +232,4 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-window.__town = { scene, camera, renderer, state, cowboy, grinner, town };
+window.__town = { scene, camera, renderer, state, cowboy, grinner, town, fire, flashlight, flammables };

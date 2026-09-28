@@ -20,9 +20,22 @@ export function expandSkeleton(bones) {
   return out;
 }
 
+// V4 mesh density: multiplies every part's tessellation (1 = as authored). Characters look
+// smoother and rounder up close at higher values; use lower values for crowds.
+export let DEFAULT_DETAIL = 1.4;
+export const setDefaultDetail = (d) => (DEFAULT_DETAIL = d);
+const SEG_KEYS = ['widthSegments', 'heightSegments', 'radialSegments', 'tubularSegments', 'capSegments', 'segments', 'samples'];
+export function scaleDetail(shape, k) {
+  if (!shape || k === 1) return shape;
+  const out = { ...shape };
+  for (const key of SEG_KEYS) if (typeof out[key] === 'number') out[key] = Math.max(out[key], Math.round(out[key] * k));
+  return out;
+}
+
 export class Character extends Node {
-  constructor(def) {
+  constructor(def, { detail = def.detail ?? DEFAULT_DETAIL } = {}) {
     super(def.name || 'Character');
+    this.detail = detail;
     this.def = JSON.parse(JSON.stringify(def));
     this.def.parts = this.def.parts || [];
     this.def.materials = this.def.materials || {};
@@ -60,7 +73,7 @@ export class Character extends Node {
     for (const m of part.meshes) this.remove(m);
     part.meshes = [];
     const d = part.def;
-    const base = buildShape(d.shape, d.modifiers || []);
+    const base = buildShape(scaleDetail(d.shape, this.detail), d.modifiers || []);
     const variants = [{ geo: base, mirror: false }];
     if (d.mirror) variants.push({ geo: base.clone().applyMatrix(MIRROR), mirror: true });
     for (const v of variants) {
