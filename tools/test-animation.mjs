@@ -2,6 +2,7 @@
 import { cowboyDefinition } from '../src/content/cowboy.js';
 import { Character } from '../src/engine/character.js';
 import { sampleClip } from '../src/engine/animation.js';
+import { vec3 } from '../src/engine/math.js';
 const ch = new Character(cowboyDefinition());
 const sk = ch.skeleton;
 const idx = (n) => sk.boneIndex(n);
@@ -9,13 +10,18 @@ let fail = 0;
 for (const clip of ch.mixer.clips.values()) {
   const N = 120, v = clip.rootMotion[2];
   const rows = [];
-  let minY = { foot: 9, toe: 9, hand: 9, knee: 9 }, seam = 0;
+  let minY = { foot: 9, toe: 9, hand: 9, knee: 9, tip: 9 }, seam = 0, grip = 0;
   const slide = { L: 0, R: 0 };
   let prev = null;
   for (let k = 0; k <= N; k++) {
     const t = (k / N) * clip.duration;
     sampleClip(clip, sk, t, ch.mixer.pose); sk.copyPose(ch.mixer.pose); sk.update();
     const z = v * t;
+    for (const s of ['L', 'R']) for (const f of ['index', 'middle', 'ring', 'pinky']) {
+      const tip = sk.worldTail(idx(f + '2.' + s));
+      minY.tip = Math.min(minY.tip, tip[1]);
+      grip = Math.max(grip, vec3.dist(tip, sk.worldHead(idx('hand.' + s))));
+    }
     const cur = {};
     for (const s of ['L', 'R']) {
       const ankle = sk.worldHead(idx('foot.' + s)), toe = sk.worldHead(idx('toe.' + s)), toeTip = sk.worldTail(idx('toe.' + s));
@@ -29,8 +35,8 @@ for (const clip of ch.mixer.clips.values()) {
     if (k === N) { const a = rows[0], b = sk.world; for (let i = 0; i < a.length; i++) seam = Math.max(seam, Math.abs(a[i] - b[i])); }
     prev = cur;
   }
-  const line = `${clip.name.padEnd(6)} dur ${clip.duration}s speed ${v} | min ankle ${minY.foot.toFixed(3)} min toe ${minY.toe.toFixed(3)} min hand ${minY.hand.toFixed(3)} min knee ${minY.knee.toFixed(3)} | planted-foot slide ${slide.L.toFixed(3)}/${slide.R.toFixed(3)} m/s | loop seam ${seam.toExponential(1)}`;
-  const bad = seam > 1e-3 || minY.toe < -0.02 || slide.L > 0.1 || slide.R > 0.1;
+  const line = `${clip.name.padEnd(6)} dur ${clip.duration}s speed ${v} | min ankle ${minY.foot.toFixed(3)} min toe ${minY.toe.toFixed(3)} min hand ${minY.hand.toFixed(3)} min knee ${minY.knee.toFixed(3)} | planted-foot slide ${slide.L.toFixed(3)}/${slide.R.toFixed(3)} m/s | fingertip min ${minY.tip.toFixed(3)} max reach ${grip.toFixed(3)} | loop seam ${seam.toExponential(1)}`;
+  const bad = minY.tip < -0.005 || (clip.name === 'Run' && grip > 0.1) || seam > 1e-3 || minY.toe < -0.02 || slide.L > 0.1 || slide.R > 0.1;
   if (bad) fail++;
   console.log((bad ? 'FAIL ' : 'ok   ') + line);
 }

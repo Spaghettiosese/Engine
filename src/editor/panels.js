@@ -279,6 +279,7 @@ function rigTab(ed, o, P) {
       h('div', { class: 'btnrow' }, h('button', { class: 'btn', onclick: () => ed.emit('command', 'anim.insertKey') }, '◆ Insert Keyframe (I)'), h('button', { class: 'btn', onclick: () => ed.emit('command', 'pose.clearRotation') }, 'Clear Pose')),
     ]));
   }
+  if (ed.mode === 'pose' && E.hasFingers(sk)) out.push(handPanel(ed, arm, sk, bi, P));
   const defBone = bi >= 0 ? ch.def.skeleton.find((x) => x.name === sk.bones[bi].name || (x.mirror && E.mirrorName(x.name) === sk.bones[bi].name)) : null;
   if (defBone && ed.mode === 'pose') {
     const isTwin = defBone.name !== sk.bones[bi].name;
@@ -330,4 +331,29 @@ function animTab(ed, o, P) {
     h('button', { class: 'btn primary', onclick: () => ed.emit('command', 'anim.synth') }, 'Generate Action'),
   ] : [h('div', { class: 'hint' }, 'Motion Synth needs a humanoid rig (hips, thigh.L, shin.L, foot.L, toe.L, upperArm.L, foreArm.L, hand.L and their .R twins). Add one with Shift A → Armature → Humanoid Rig.')]));
   return out;
+}
+
+// Hand posing: presets and per-finger curl sliders for the hand the active bone belongs to.
+function handPanel(ed, arm, sk, bi, P) {
+  const name = bi >= 0 ? sk.bones[bi].name : 'hand.R';
+  const side = /\.L$/.test(name) ? 'L' : 'R';
+  const H = ed.uiState.hands || (ed.uiState.hands = { L: { ...E.HAND_POSES.relaxed, curl: [...E.HAND_POSES.relaxed.curl] }, R: { ...E.HAND_POSES.relaxed, curl: [...E.HAND_POSES.relaxed.curl] } });
+  const pose = H[side];
+  const fingerBones = (s) => E.FINGER_NAMES.flatMap((f) => [sk.boneIndex(f + '1.' + s), sk.boneIndex(f + '2.' + s)]).filter((i) => i >= 0);
+  const apply = (s, fin) => {
+    E.applyHandPose(sk, s, H[s]); sk.update(); ed.poseDirty = true;
+    if (fin && ed.autoKey) { ed.insertKeys(arm, new Set(fingerBones(s))); ed.commit('Auto Keyframe'); }
+    ed.emit('modal');
+  };
+  const labels = { relaxed: 'Relaxed', fist: 'Fist', flat: 'Flat', point: 'Point', gunGrip: 'Gun grip', thumbsUp: 'Thumbs up', spread: 'Spread', claw: 'Claw' };
+  return P(`✋ Hand Pose · ${side === 'L' ? 'Left' : 'Right'}`, [
+    h('div', { class: 'hint' }, 'Select a hand or finger bone to choose the hand. Presets and sliders pose all ten finger joints at once.'),
+    h('div', { class: 'btnrow' }, Object.entries(labels).map(([k, l]) => h('button', { class: 'btn', onclick: () => { H[side] = { curl: [...E.HAND_POSES[k].curl], spread: E.HAND_POSES[k].spread }; apply(side, true); ed.emit('selection'); } }, l))),
+    ...E.FINGER_NAMES.map((f, i) => row(f[0].toUpperCase() + f.slice(1), num('', () => pose.curl[i], (v, fin) => { pose.curl[i] = v; apply(side, fin); }, { min: -0.2, max: 1.2, step: 0.01, slider: true }))),
+    row('Spread', num('', () => pose.spread, (v, fin) => { pose.spread = v; apply(side, fin); }, { min: 0, max: 1, step: 0.01, slider: true })),
+    h('div', { class: 'btnrow' },
+      h('button', { class: 'btn', onclick: () => { const n = ed.insertKeys(arm, new Set(fingerBones(side))); ed.commit('Key Hand'); toast(`Keyed ${n} finger joints`); ed.emit('selection'); } }, '◆ Key hand'),
+      h('button', { class: 'btn', onclick: () => { const o = side === 'L' ? 'R' : 'L'; H[o] = { curl: [...pose.curl], spread: pose.spread }; apply(o, true); toast('Mirrored to the other hand'); } }, 'Mirror to other hand'),
+      h('button', { class: 'btn', onclick: () => { for (const s of ['L', 'R']) E.applyHandPose(sk, s, H[s]); sk.update(); ed.poseDirty = true; const n = ed.insertKeys(arm, new Set([...fingerBones('L'), ...fingerBones('R')])); ed.commit('Key Hands'); toast(`Keyed ${n} finger joints`); } }, 'Key both')),
+  ]);
 }

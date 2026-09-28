@@ -5,6 +5,28 @@ import { Skeleton } from '../engine/skeleton.js';
 import { expandSkeleton } from '../engine/character.js';
 import { synthesizeLocomotion, synthesizeCrawl, synthesizeIdle } from '../engine/gait.js';
 
+// Fingers (left hand; mirrored to the right). Rest pose: straight, hanging down,
+// palm facing the thigh (-X). Each finger has a proximal and a distal bone.
+const KNUCKLE_Y = 0.845;
+export const FINGERS = [
+  { name: 'index', z: 0.041, length: 0.052, radius: 0.0092 },
+  { name: 'middle', z: 0.0215, length: 0.057, radius: 0.0095 },
+  { name: 'ring', z: 0.002, length: 0.053, radius: 0.0092 },
+  { name: 'pinky', z: -0.0175, length: 0.043, radius: 0.0082 },
+];
+const FINGER_X = 0.277;
+const FINGER_BONES = [
+  ...FINGERS.flatMap((f) => {
+    const j = KNUCKLE_Y - f.length * 0.55, tip = KNUCKLE_Y - f.length;
+    return [
+      { name: f.name + '1.L', parent: 'hand.L', head: [FINGER_X, KNUCKLE_Y, f.z], tail: [FINGER_X, j, f.z], mirror: true },
+      { name: f.name + '2.L', parent: f.name + '1.L', head: [FINGER_X, j, f.z], tail: [FINGER_X, tip, f.z], mirror: true },
+    ];
+  }),
+  { name: 'thumb1.L', parent: 'hand.L', head: [0.271, 0.8925, 0.042], tail: [0.262, 0.87, 0.055], mirror: true },
+  { name: 'thumb2.L', parent: 'thumb1.L', head: [0.262, 0.87, 0.055], tail: [0.253, 0.8475, 0.068], mirror: true },
+];
+
 export const COWBOY_SKELETON = [
   { name: 'root', parent: null, head: [0, 0, 0], tail: [0, 0.2, 0], deform: false },
   { name: 'hips', parent: 'root', head: [0, 0.98, 0], tail: [0, 1.1, 0] },
@@ -17,7 +39,8 @@ export const COWBOY_SKELETON = [
   { name: 'shoulder.L', parent: 'chest', head: [0.04, 1.45, -0.01], tail: [0.18, 1.45, -0.01], mirror: true },
   { name: 'upperArm.L', parent: 'shoulder.L', head: [0.18, 1.45, -0.01], tail: [0.235, 1.175, -0.02], mirror: true },
   { name: 'foreArm.L', parent: 'upperArm.L', head: [0.235, 1.175, -0.02], tail: [0.265, 0.935, 0.01], mirror: true },
-  { name: 'hand.L', parent: 'foreArm.L', head: [0.265, 0.935, 0.01], tail: [0.275, 0.83, 0.02], mirror: true },
+  { name: 'hand.L', parent: 'foreArm.L', head: [0.265, 0.935, 0.01], tail: [0.276, 0.845, 0.018], mirror: true },
+  ...FINGER_BONES,
   { name: 'thigh.L', parent: 'hips', head: [0.095, 0.95, 0], tail: [0.105, 0.53, 0.01], mirror: true },
   { name: 'shin.L', parent: 'thigh.L', head: [0.105, 0.53, 0.01], tail: [0.11, 0.1, -0.01], mirror: true },
   { name: 'foot.L', parent: 'shin.L', head: [0.11, 0.1, -0.01], tail: [0.113, 0.03, 0.12], mirror: true },
@@ -97,21 +120,21 @@ export const COWBOY_PARTS = [
   P('Lasso', { type: 'torus', radius: 0.078, tube: 0.0085, radialSegments: 8, tubularSegments: 48, arc: 360, tubeScaleY: 1 }, 'rope', { bone: 'hips' }, { position: [0.182, 0.92, -0.01], rotation: [0, 0, 90], modifiers: [{ type: 'array', count: 3, offsetX: 0, offsetY: 0.013, offsetZ: 0, rotX: 0, rotY: 8, rotZ: 0, scaleStep: 1.02 }] }),
   // ---------------------------------------------------------------- arms (mirrored)
   P('Sleeve', { type: 'tube', path: [[0.165, 1.452, -0.01], [0.207, 1.33, -0.015], [0.235, 1.175, -0.02], [0.25, 1.05, -0.004], [0.262, 0.965, 0.007]], radii: [0.056, 0.049, 0.043, 0.04, 0.038], radialSegments: 20, samples: 6, caps: false, flatten: 1, arc: 360, arcOffset: 0, twist: 0 }, 'shirt', { bones: ['chest', 'shoulder.L', 'upperArm.L', 'foreArm.L'], falloff: 7 }, { mirror: true }),
-  P('Glove Cuff', { type: 'cylinder', radiusTop: 0.042, radiusBottom: 0.034, height: 0.06, radialSegments: 20, heightSegments: 2, capTop: false, capBottom: false, arc: 360 }, 'glove', { bone: 'foreArm.L' }, { position: [0.263, 0.952, 0.009], rotation: [6, 0, 7], modifiers: [{ type: 'solidify', thickness: 0.003 }] }),
-  P('Palm', rbox(0.03, 0.085, 0.074, 0.013), 'glove', { bone: 'hand.L' }, { position: [0.274, 0.885, 0.015], rotation: [0, 0, 6] }),
-  P('Fingers', { type: 'capsule', radius: 0.0095, length: 0.042, radialSegments: 10, capSegments: 4 }, 'glove', { bone: 'hand.L' }, { position: [0.276, 0.822, 0.041], rotation: [0, 0, 6], modifiers: [{ type: 'bend', axis: 'y', toward: 'x', angle: -40 }, { type: 'array', count: 4, offsetX: 0, offsetY: 0.002, offsetZ: -0.0195, rotX: 0, rotY: 0, rotZ: 0, scaleStep: 0.97 }] }),
-  P('Thumb', { type: 'capsule', radius: 0.0105, length: 0.034, radialSegments: 10, capSegments: 4 }, 'glove', { bone: 'hand.L' }, { position: [0.262, 0.87, 0.055], rotation: [-28, 0, -22] }),
+  P('Glove Cuff', { type: 'cylinder', radiusTop: 0.042, radiusBottom: 0.034, height: 0.06, radialSegments: 20, heightSegments: 2, capTop: false, capBottom: false, arc: 360 }, 'glove', { bone: 'foreArm.L' }, { mirror: true, position: [0.263, 0.952, 0.009], rotation: [6, 0, 7], modifiers: [{ type: 'solidify', thickness: 0.003 }] }),
+  P('Palm', rbox(0.03, 0.085, 0.074, 0.013), 'glove', { bone: 'hand.L' }, { mirror: true, position: [0.274, 0.885, 0.015], rotation: [0, 0, 6] }),
+  ...FINGERS.map((f) => P(f.name[0].toUpperCase() + f.name.slice(1) + ' Finger', { type: 'capsule', radius: f.radius, length: f.length - f.radius, radialSegments: 12, capSegments: 5 }, 'glove', { bones: ['hand.L', f.name + '1.L', f.name + '2.L'], falloff: 9 }, { position: [FINGER_X, KNUCKLE_Y + 0.004 - (f.length + f.radius) / 2, f.z], mirror: true })),
+  P('Thumb', { type: 'capsule', radius: 0.0105, length: 0.034, radialSegments: 12, capSegments: 5 }, 'glove', { bones: ['hand.L', 'thumb1.L', 'thumb2.L'], falloff: 9 }, { position: [0.262, 0.87, 0.055], rotation: [-28, 0, -22], mirror: true }),
   // ---------------------------------------------------------------- legs (mirrored)
   P('Jeans Leg', { type: 'tube', path: [[0.092, 1.0, 0.0], [0.1, 0.76, 0.012], [0.105, 0.53, 0.02], [0.108, 0.33, 0.0], [0.11, 0.17, -0.012]], radii: [0.082, 0.068, 0.055, 0.052, 0.062], radialSegments: 22, samples: 6, caps: false, flatten: 1, arc: 360, arcOffset: 0, twist: 0 }, 'jeans', { bones: ['hips', 'thigh.L', 'shin.L'], falloff: 7 }, { mirror: true }),
   P('Chaps', { type: 'tube', path: [[0.094, 0.98, 0.0], [0.1, 0.76, 0.012], [0.105, 0.53, 0.02], [0.108, 0.33, 0.0], [0.11, 0.2, -0.012]], radii: [0.093, 0.079, 0.066, 0.063, 0.071], radialSegments: 22, samples: 6, caps: false, flatten: 1, arc: 250, arcOffset: -140, twist: 0 }, 'chaps', { bones: ['hips', 'thigh.L', 'shin.L'], falloff: 7 }, { mirror: true, modifiers: [{ type: 'solidify', thickness: 0.004 }] }),
   P('Chaps Fringe', rbox(0.004, 0.055, 0.011, 0.0018), 'chaps', { bones: ['thigh.L', 'shin.L'], falloff: 6 }, { position: [0.19, 0.9, 0.0], rotation: [0, 0, 3], mirror: true, modifiers: [{ type: 'array', count: 13, offsetX: -0.0014, offsetY: -0.056, offsetZ: 0.0004, rotX: 0, rotY: 0, rotZ: 0, scaleStep: 1 }] }),
-  P('Boot Shaft', { type: 'cylinder', radiusTop: 0.056, radiusBottom: 0.05, height: 0.17, radialSegments: 22, heightSegments: 3, capTop: false, capBottom: true, arc: 360 }, 'boot', { bones: ['shin.L', 'foot.L'], falloff: 8 }, { position: [0.11, 0.2, -0.008] }),
-  P('Boot Foot', sq(0.047, 0.047, 0.125, 0.6, 0.78), 'boot', { bones: ['foot.L', 'toe.L'], falloff: 6 }, { position: [0.113, 0.068, 0.045], modifiers: [{ type: 'taper', axis: 'z', amount: -0.32, curve: 1.2 }, { type: 'squash', axis: 'y', min: -0.043, max: 1 }] }),
-  P('Boot Sole', rbox(0.088, 0.013, 0.262, 0.005), 'sole', { bones: ['foot.L', 'toe.L'], falloff: 6 }, { position: [0.113, 0.019, 0.048], modifiers: [{ type: 'taper', axis: 'z', amount: -0.3, curve: 1.3 }] }),
-  P('Boot Heel', rbox(0.058, 0.045, 0.058, 0.004), 'sole', { bone: 'foot.L' }, { position: [0.112, 0.0225, -0.048], modifiers: [{ type: 'taper', axis: 'y', amount: 0.14, curve: 1 }] }),
-  P('Spur Strap', { type: 'torus', radius: 0.054, tube: 0.0055, radialSegments: 8, tubularSegments: 36, arc: 360, tubeScaleY: 1.6 }, 'belt', { bone: 'foot.L' }, { position: [0.112, 0.075, -0.012], rotation: [-18, 0, 0], scale: [1, 1, 1.18] }),
-  P('Spur Shank', { type: 'cylinder', radiusTop: 0.004, radiusBottom: 0.004, height: 0.05, radialSegments: 8, heightSegments: 1, capTop: true, capBottom: true, arc: 360 }, 'silver', { bone: 'foot.L' }, { position: [0.112, 0.072, -0.09], rotation: [80, 0, 0] }),
-  P('Spur Rowel', { type: 'extrude', shape: 'star', points: 8, inner: 0.42, radius: 0.019, teeth: 12, toothDepth: 0.12, depth: 0.003, bevel: 0.0008 }, 'silver', { bone: 'foot.L' }, { position: [0.112, 0.068, -0.118], rotation: [0, 90, 0] }),
+  P('Boot Shaft', { type: 'cylinder', radiusTop: 0.056, radiusBottom: 0.05, height: 0.17, radialSegments: 22, heightSegments: 3, capTop: false, capBottom: true, arc: 360 }, 'boot', { bones: ['shin.L', 'foot.L'], falloff: 8 }, { mirror: true, position: [0.11, 0.2, -0.008] }),
+  P('Boot Foot', sq(0.047, 0.047, 0.125, 0.6, 0.78), 'boot', { bones: ['foot.L', 'toe.L'], falloff: 6 }, { mirror: true, position: [0.113, 0.068, 0.045], modifiers: [{ type: 'taper', axis: 'z', amount: -0.32, curve: 1.2 }, { type: 'squash', axis: 'y', min: -0.043, max: 1 }] }),
+  P('Boot Sole', rbox(0.088, 0.013, 0.262, 0.005), 'sole', { bones: ['foot.L', 'toe.L'], falloff: 6 }, { mirror: true, position: [0.113, 0.019, 0.048], modifiers: [{ type: 'taper', axis: 'z', amount: -0.3, curve: 1.3 }] }),
+  P('Boot Heel', rbox(0.058, 0.045, 0.058, 0.004), 'sole', { bone: 'foot.L' }, { mirror: true, position: [0.112, 0.0225, -0.048], modifiers: [{ type: 'taper', axis: 'y', amount: 0.14, curve: 1 }] }),
+  P('Spur Strap', { type: 'torus', radius: 0.054, tube: 0.0055, radialSegments: 8, tubularSegments: 36, arc: 360, tubeScaleY: 1.6 }, 'belt', { bone: 'foot.L' }, { mirror: true, position: [0.112, 0.075, -0.012], rotation: [-18, 0, 0], scale: [1, 1, 1.18] }),
+  P('Spur Shank', { type: 'cylinder', radiusTop: 0.004, radiusBottom: 0.004, height: 0.05, radialSegments: 8, heightSegments: 1, capTop: true, capBottom: true, arc: 360 }, 'silver', { bone: 'foot.L' }, { mirror: true, position: [0.112, 0.072, -0.09], rotation: [80, 0, 0] }),
+  P('Spur Rowel', { type: 'extrude', shape: 'star', points: 8, inner: 0.42, radius: 0.019, teeth: 12, toothDepth: 0.12, depth: 0.003, bevel: 0.0008 }, 'silver', { bone: 'foot.L' }, { mirror: true, position: [0.112, 0.068, -0.118], rotation: [0, 90, 0] }),
 ];
 
 export function cowboyDefinition({ withClips = true } = {}) {
@@ -130,7 +153,7 @@ export function cowboyClips() {
       sway: 0.012, lean: 11, pelvisYaw: 9, pelvisRoll: 3, spineCounter: 1.1, stepWidth: 0.09, center: -0.1,
       heelStrike: -6, toeOff: 48, flatStart: 0.2, heelOff: 0.35, swingPitchMid: 30,
       kick: [0, 0.34, -0.16], drive: [0, 0.3, 0.22], armSwing: 38, armBias: -8, armAbduct: 10, elbow: 78, elbowSwing: 22,
-      headPitch: 4, handFlex: -15, spineLean: 3, chestLean: 2,
+      headPitch: 4, handFlex: -15, spineLean: 3, chestLean: 2, hands: 'fist', fingerSwing: 0.04,
     }),
     synthesizeCrawl(sk, { name: 'Crawl' }),
   ];

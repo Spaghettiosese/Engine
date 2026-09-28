@@ -18,7 +18,7 @@ const controls = new E.OrbitControls(camera, canvas, { leftButtonOrbit: true });
 controls.distance = 5; controls.pitch = 0.18; controls.yaw = 0.6; controls.apply();
 const particles = new E.Particles(3000);
 
-const state = { mode: 'roam', paused: false, speed: 1, fade: 0.4, skeleton: false, onion: false, wire: false, toon: false, shadows: true, dust: true, turntable: false, yaw: 0, velocity: [0, 0, 0], crawl: false, keys: new Set(), moveSpeed: 0 };
+const state = { focus: 'body', mode: 'roam', paused: false, speed: 1, fade: 0.4, skeleton: false, onion: false, wire: false, toon: false, shadows: true, dust: true, turntable: false, yaw: 0, velocity: [0, 0, 0], crawl: false, keys: new Set(), moveSpeed: 0 };
 let character, ghost, clipNames = [];
 
 function loadCharacter(ch) {
@@ -99,6 +99,11 @@ slider('sun', 'sunOut', (v) => v + '°', (v) => {
   scene.environment.sunColor = [1.0, 0.9 - warm * 0.25, 0.78 - warm * 0.4];
   scene.environment.horizonColor = [0.95, 0.76 - warm * 0.18, 0.58 - warm * 0.25];
 });
+document.querySelectorAll('[data-focus]').forEach((b) => (b.onclick = () => {
+  state.focus = b.dataset.focus; state.follow = true;
+  document.querySelectorAll('[data-focus]').forEach((x) => x.classList.toggle('on', x === b));
+  controls.animateTo({ distance: { body: 5, hands: 0.75, face: 0.9 }[state.focus] }, 0.6);
+}));
 $('play').onclick = () => { state.paused = !state.paused; updatePlayBtn(); };
 function updatePlayBtn() { $('play').textContent = state.paused ? '▶' : '❚❚'; $('play').setAttribute('aria-label', state.paused ? 'Play' : 'Pause'); }
 $('panelToggle').onclick = () => { const p = $('panel'); p.classList.toggle('open'); $('panelToggle').setAttribute('aria-expanded', p.classList.contains('open')); };
@@ -230,7 +235,12 @@ function frame(now) {
   particles.update(dt);
   // camera follows the hips
   const hips = E.vec3.transformMat4([0, 0, 0], character.skeleton.worldHead(Math.max(0, character.skeleton.boneIndex('hips'))), character.world);
-  const tgt = [hips[0], Math.max(0.55, hips[1] * 0.85 + 0.15), hips[2]];
+  let tgt = [hips[0], Math.max(0.55, hips[1] * 0.85 + 0.15), hips[2]];
+  const fb = state.focus === 'hands' ? 'hand.R' : state.focus === 'face' ? 'head' : null;
+  if (fb && character.skeleton.boneIndex(fb) >= 0) {
+    const sk = character.skeleton, i = sk.boneIndex(fb);
+    tgt = E.vec3.transformMat4([0, 0, 0], E.vec3.lerp([0, 0, 0], sk.worldHead(i), sk.worldTail(i), 0.6), character.world);
+  }
   if (state.follow !== false) E.vec3.lerp(controls.target, controls.target, tgt, Math.min(1, dt * 5));
   controls.update(dt); controls.apply();
   scene.environment.shadowCenter = [hips[0], 1, hips[2]]; scene.environment.shadowRadius = 7;

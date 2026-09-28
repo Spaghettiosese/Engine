@@ -13,6 +13,44 @@ const ease = (t) => (1 - Math.cos(Math.PI * clamp(t, 0, 1))) / 2;
 const bez = (a, b, c, d, t) => { const u = 1 - t; return a.map((_, k) => u * u * u * a[k] + 3 * u * u * t * b[k] + 3 * u * t * t * c[k] + t * t * t * d[k]); };
 const rotX = (v, deg) => { const r = (deg * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r); return [v[0], v[1] * c - v[2] * s, v[1] * s + v[2] * c]; };
 
+// ------------------------------------------------------------------ hands
+// Curl values run 0 (straight) .. 1 (closed) for [thumb, index, middle, ring, pinky];
+// spread 0..1 fans the fingers apart.
+export const HAND_POSES = {
+  relaxed: { curl: [0.2, 0.28, 0.36, 0.42, 0.5], spread: 0.15 },
+  fist: { curl: [0.85, 1, 1, 1, 1], spread: 0 },
+  flat: { curl: [0.05, 0.02, 0.02, 0.03, 0.05], spread: 0.45 },
+  point: { curl: [0.75, 0, 1, 1, 1], spread: 0 },
+  gunGrip: { curl: [0.55, 0.2, 0.85, 0.9, 0.95], spread: 0 },
+  thumbsUp: { curl: [0, 1, 1, 1, 1], spread: 0 },
+  spread: { curl: [0, 0, 0, 0, 0], spread: 1 },
+  claw: { curl: [0.4, 0.55, 0.6, 0.6, 0.65], spread: 0.7 },
+};
+export const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky'];
+const SPREAD = { index: -9, middle: -2, ring: 5, pinky: 12 };
+export const hasFingers = (sk, side = 'L') => sk.boneIndex('index1.' + side) >= 0;
+export const blendHandPoses = (a, b, t) => ({ curl: a.curl.map((c, i) => c + (b.curl[i] - c) * t), spread: a.spread + (b.spread - a.spread) * t });
+
+// Set the local rotations of one hand's finger bones. Works on any rig that uses
+// thumb1/2, index1/2, middle1/2, ring1/2, pinky1/2 with .L/.R suffixes.
+export function applyHandPose(sk, side, pose) {
+  const p = typeof pose === 'string' ? HAND_POSES[pose] : pose;
+  const m = side === 'R' ? -1 : 1, q = quat.create();
+  FINGER_NAMES.forEach((f, k) => {
+    const c = clamp(p.curl[k] ?? 0, -0.2, 1.2);
+    const i1 = sk.boneIndex(f + '1.' + side), i2 = sk.boneIndex(f + '2.' + side);
+    if (i1 < 0) return;
+    if (f === 'thumb') {
+      sk.rot.set(quat.fromEuler(q, 30 * c, 0, m * -40 * c), i1 * 4);
+      if (i2 >= 0) sk.rot.set(quat.fromEuler(q, 10 * c, 0, m * -55 * c), i2 * 4);
+    } else {
+      const s = (SPREAD[f] || 0) * (p.spread ?? 0) * (1 - 0.6 * c);
+      sk.rot.set(quat.fromEuler(q, s, 0, m * -78 * c), i1 * 4);
+      if (i2 >= 0) sk.rot.set(quat.fromEuler(q, 0, 0, m * -95 * Math.pow(c, 1.15)), i2 * 4);
+    }
+  });
+}
+
 class Rig {
   constructor(sk) {
     this.sk = sk;
@@ -70,7 +108,7 @@ export function synthesizeLocomotion(sk, o) {
     sway: 0.022, lean: 3, pelvisYaw: 6, pelvisRoll: 4, spineCounter: 0.9, stepWidth: 0.105, center: 0.03,
     heelStrike: -16, toeOff: 38, flatStart: 0.14, heelOff: 0.52, swingPitchMid: 8,
     kick: [0, 0.07, -0.02], drive: [0, 0.06, 0.08], armSwing: 18, armAbduct: 6, armBias: 2, elbow: 14, elbowSwing: 14,
-    headPitch: 0, handFlex: -8, spineLean: 1, chestLean: 1, syncGroup: 'locomotion', strikeLift: 0.0,
+    headPitch: 0, handFlex: -8, spineLean: 1, chestLean: 1, syncGroup: 'locomotion', strikeLift: 0.0, hands: 'relaxed', fingerSwing: 0.07,
     ...o,
   };
   const R = new Rig(sk), T = p.duration, S = p.speed * p.stance * T;
@@ -126,6 +164,10 @@ export function synthesizeLocomotion(sk, o) {
       R.set('foreArm', [-(p.elbow + p.elbowSwing * (1 - armPh) / 2), 0, 0], side);
       R.set('hand', [p.handFlex, 0, 0], side);
       R.set('shoulder', [0, 0, -1.5 * armPh], side);
+      // fingers trail the arm swing: they open slightly as the hand swings forward
+      const base = HAND_POSES[p.hands] || HAND_POSES.relaxed;
+      const lag = Math.cos(TAU * ph - 0.9);
+      applyHandPose(sk, side, { curl: base.curl.map((c, i) => c + p.fingerSwing * lag * (0.6 + i * 0.1)), spread: base.spread });
     }
     sk.update();
     R.set('neck', [-p.lean * 0.4, 0, 0]);
@@ -140,7 +182,7 @@ export function synthesizeLocomotion(sk, o) {
 
 // ------------------------------------------------------------------ crawl (hands & knees)
 export function synthesizeCrawl(sk, o = {}) {
-  const p = { name: 'Crawl', duration: 1.6, speed: 0.3, stance: 0.68, samples: 24, pitch: 80, knee: 0.06, handY: 0.045, lift: 0.07, kneeLift: 0.05, ...o };
+  const p = { name: 'Crawl', duration: 1.6, speed: 0.3, stance: 0.68, samples: 24, pitch: 80, knee: 0.06, handY: 0.024, lift: 0.07, kneeLift: 0.05, ...o };
   const R = new Rig(sk), T = p.duration, S = p.speed * p.stance * T;
   const L1 = vec3.dist(sk.bones[R.i['thigh.L']].head, sk.bones[R.i['shin.L']].head);
   const L2 = vec3.dist(sk.bones[R.i['shin.L']].head, sk.bones[R.i['foot.L']].head);
@@ -197,6 +239,7 @@ export function synthesizeCrawl(sk, o = {}) {
       // palm flat on the floor, fingers forward (tilt the fingers down while swinging)
       const lift = c.s >= 0 ? Math.sin(Math.PI * c.s) : 0;
       setWorldRotation(sk, R.i['hand.' + side], quat.multiply(quat.create(), E(0, 0, sg * 90), E(-90 + 35 * lift, 0, 0)));
+      applyHandPose(sk, side, blendHandPoses(HAND_POSES.flat, HAND_POSES.claw, lift));
       R.set('shoulder', [0, 0, 4 * Math.cos(TAU * (phi + off['hand.' + side]))], side);
     }
     sk.update();
@@ -212,7 +255,7 @@ export function synthesizeCrawl(sk, o = {}) {
 
 // ------------------------------------------------------------------ idle (planted feet, breathing, thumbs in belt)
 export function synthesizeIdle(sk, o = {}) {
-  const p = { name: 'Idle', duration: 4, samples: 16, hipHeight: 0.965, thumbHook: true, ...o };
+  const p = { name: 'Idle', duration: 4, samples: 48, hipHeight: 0.965, thumbHook: true, ...o };
   const R = new Rig(sk), T = p.duration;
   const samples = [];
   for (let k = 0; k < p.samples; k++) {
@@ -237,6 +280,12 @@ export function synthesizeIdle(sk, o = {}) {
     R.set('upperArm', [4 + 1.5 * s2, 0, 7], 'R');
     R.set('foreArm', [-14 - 2 * s2, 0, 0], 'R');
     R.set('hand', [-12, 0, -4], 'R');
+    if (p.thumbHook) applyHandPose(sk, 'L', { curl: [-0.05, 0.3 + 0.05 * s1, 0.42, 0.5, 0.58], spread: 0.1 });
+    else applyHandPose(sk, 'L', 'relaxed');
+    // right hand: impatient finger drumming during the second half of the loop
+    const drum = smoothstep(0.45, 0.55, phi) * (1 - smoothstep(0.9, 0.98, phi));
+    const tap = (k) => Math.pow(Math.max(0, Math.sin(TAU * (phi * 8 - k * 0.12))), 3) * drum;
+    applyHandPose(sk, 'R', { curl: [0.25, 0.3 - 0.25 * tap(3), 0.36 - 0.25 * tap(2), 0.42 - 0.25 * tap(1), 0.5 - 0.25 * tap(0)], spread: 0.15 + 0.2 * drum });
     sk.update();
     R.set('neck', [0, 6 * Math.sin(TAU * phi + 0.6), 0]);
     setWorldRotation(sk, R.i.head, E(-2 + 2.5 * s2, 14 * Math.sin(TAU * phi + 0.3) * smoothstep(-0.2, 0.6, c1 * 0.5 + 0.5), 0));

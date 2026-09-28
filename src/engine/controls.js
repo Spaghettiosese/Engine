@@ -78,8 +78,8 @@ export class OrbitControls {
     this._goal = null; this.apply();
   }
   // Smoothly fly to a view (Blender numpad views / frame selected)
-  animateTo({ yaw = this.yaw, pitch = this.pitch, distance = this.distance, target = this.target }, duration = 0.3) {
-    this._goal = { from: { yaw: this.yaw, pitch: this.pitch, distance: this.distance, target: [...this.target] }, to: { yaw, pitch, distance, target: [...target] }, t: 0, duration };
+  animateTo({ yaw = this.yaw, pitch = this.pitch, distance = this.distance, target = null }, duration = 0.3) {
+    this._goal = { from: { yaw: this.yaw, pitch: this.pitch, distance: this.distance, target: [...this.target] }, to: { yaw, pitch, distance, target: target ? [...target] : null }, t: 0, duration };
   }
   update(dt) {
     const g = this._goal;
@@ -89,7 +89,7 @@ export class OrbitControls {
       let dy = g.to.yaw - g.from.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       this.yaw = g.from.yaw + dy * s; this.pitch = g.from.pitch + (g.to.pitch - g.from.pitch) * s;
       this.distance = g.from.distance + (g.to.distance - g.from.distance) * s;
-      vec3.lerp(this.target, g.from.target, g.to.target, s);
+      if (g.to.target) vec3.lerp(this.target, g.from.target, g.to.target, s);
       if (g.t >= 1) this._goal = null;
       this.apply();
     }

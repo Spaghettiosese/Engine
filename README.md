@@ -29,7 +29,9 @@ ES modules don't load from `file://`, so open the pages through a local server.
 - **Belt line**: belt, rodeo buckle with a gold star, holster and revolver on a spring bone, a coiled lasso (Array of tori)
 - **Arms and legs**: tube-swept sleeves and jeans with automatic weights for smooth elbows and knees, gauntlet gloves with fingers, leather chaps with fringe, boots with stacked heels and spurs with star rowels
 
-51 part definitions (64 meshes once the mirrored left/right twins are generated), 24 bones, about 67k triangles, 22 materials.
+54 part definitions (81 meshes once the mirrored left/right twins are generated), 44 bones including two-joint fingers and thumbs on both hands, about 73k triangles, 22 materials.
+
+**Fingers** are animated in every clip: relaxed fingers that trail the arm swing in the walk, loose fists in the run, flat spread palms that curl as each hand lifts in the crawl, and in the idle the left thumb hooks the belt while the right hand drums its fingers beside the holster.
 
 ### Clips
 
@@ -75,7 +77,7 @@ runLoop((dt) => {
 | `animation.js` | `Clip` (smooth / linear / constant keys, events, root motion, sync groups), `Mixer` (crossfades, blend weights, phase sync) |
 | `character.js` | `Character`: skeleton + parts + materials + clips, JSON round-trip, automatic left/right mirroring |
 | `ik.js` | Two-bone IK, aim constraints, world-space rotation helpers |
-| `gait.js` | Procedural gait synthesizer: `synthesizeLocomotion`, `synthesizeCrawl`, `synthesizeIdle` |
+| `gait.js` | Procedural gait synthesizer (`synthesizeLocomotion`, `synthesizeCrawl`, `synthesizeIdle`) and hand posing (`applyHandPose`, `HAND_POSES`: relaxed, fist, flat, point, gun grip, thumbs up, spread, claw) |
 | `renderer.js` / `shaders.js` | Forward renderer: GGX PBR, 12-tap PCF shadows, procedural sky with mesas and clouds, derivative bump mapping, bloom, ACES, FXAA fallback, selection outlines, onion-skin ghosts, particles, GPU picking |
 | `controls.js` | Orbit / pan / zoom with Blender bindings and touch support |
 | `particles.js` | Soft point-sprite particles (footstep dust) |
@@ -141,6 +143,7 @@ Additional features:
 - **Motion Synth** (Animation tab): generates new gait actions (walk, cowboy swagger, sneak, jog, crawl, idle) from sliders for speed, cycle length, stance, hip height, lean, arm swing, bounce and step width.
 - **Auto keying** (● in the Dope Sheet) records pose edits as you make them; **onion skinning** shows ghosts three and six frames either side.
 - **Bind to Armature** (Rig tab) turns any mesh into a character part with rigid or automatic weights; **Unbind** turns it back.
+- **Hand Pose** panel (Rig tab, Pose Mode): presets, a curl slider per finger, spread, Key hand, Mirror to other hand.
 - Edit bones' rest positions, extrude child bones, and turn any bone into a spring (jiggle) bone.
 - Autosaves to browser storage. File › Save downloads the scene; Copy Scene as JSON and Import from Pasted JSON work where downloads are blocked.
 - Export glTF (.glb), OBJ, or the engine's character JSON. **Open Character in Viewer** hands the character to the Viewer.
@@ -149,6 +152,7 @@ Additional features:
 
 - Click a clip (or press 1–9) to crossfade; the bar under each clip shows its live blend weight.
 - **In place**, **Roam** (root motion around a loop, camera follows) and **Play** (WASD or arrows, Shift to run, C to crawl) modes.
+- Camera focus: Full body, Hands (close-up on the finger animation) or Face.
 - Skeleton, onion skin, wireframe and toon overlays; shadows, spring bones, footstep dust, set dressing, turntable, bloom and sun angle.
 - Scrub the timeline (footstep events are marked on it), step frames with ← → while paused.
 - Load any character JSON exported by the Studio.
@@ -171,6 +175,5 @@ tools/                    tests, asset baking, artifact packing, headless screen
 ## Known limits
 
 - There is no vertex-level Edit Mode; shapes are edited through their parameters and modifier stacks.
-- Fingers are modelled but not individually rigged; hands pose as a unit.
 - glTF export carries base colour, metallic and roughness; the procedural patterns are shader-only, so exported materials are flat colours.
 - Inside sandboxed frames that block downloads, the Studio offers copy-to-clipboard dialogs instead.
