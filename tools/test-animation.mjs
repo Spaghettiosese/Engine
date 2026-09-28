@@ -40,7 +40,7 @@ for (const clip of ch.mixer.clips.values()) {
     prev = cur;
   }
   const line = `${clip.name.padEnd(6)} dur ${clip.duration}s speed ${v} | min ankle ${minY.foot.toFixed(3)} min toe ${minY.toe.toFixed(3)} min hand ${minY.hand.toFixed(3)} min knee ${minY.knee.toFixed(3)} | planted-foot slide ${slide.L.toFixed(3)}/${slide.R.toFixed(3)} m/s | fingertip min ${minY.tip.toFixed(3)} max reach ${grip.toFixed(3)} | loop seam ${seam.toExponential(1)}`;
-  const bad = minY.tip < -0.005 || (clip.name === 'Run' && grip > 0.1) || (clip.name === 'Crawl' && minY.hand > 0.08) || seam > 1e-3 || minY.toe < -0.02 || slide.L > 0.1 || slide.R > 0.1;
+  const bad = minY.tip < -0.005 || (clip.name === 'Run' && grip > 0.1) || (clip.name === 'Crawl' && minY.hand > 0.08) || (clip.loop && seam > 1e-3) || minY.toe < -0.02 || slide.L > 0.1 || slide.R > 0.1;
   if (bad) fail++;
   console.log((bad ? 'FAIL ' : 'ok   ') + line);
 }

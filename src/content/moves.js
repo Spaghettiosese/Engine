@@ -26,7 +26,7 @@ export function jumpClips(sk) {
   const start = keyPoseClip(sk, 'Jump Start', [
     { t: 0, ...STAND },
     { t: 0.16, hips: [0, 0.8, -0.03], bones: { hips: [16, 0, 0], spine: [14, 0, 0], chest: [8, 0, 0], neck: [-14, 0, 0], head: [-6, 0, 0], 'upperArm*': [42, 0, 10], 'foreArm*': [-24, 0, 0] } },
-    { t: 0.3, hips: [0, 1.02, 0.02], bones: { hips: [-4, 0, 0], spine: [0, 0, 0], chest: [-4, 0, 0], neck: [4, 0, 0], head: [0, 0, 0], 'upperArm*': [-120, 0, 18], 'foreArm*': [-30, 0, 0] }, legs: { L: foot('L', 0.16, 0.0, 34), R: foot('R', 0.16, 0.0, 34) }, hands: { L: 'flat', R: 'flat' } },
+    { t: 0.3, hips: [0, 1.02, 0.02], bones: { hips: [-4, 0, 0], spine: [0, 0, 0], chest: [-4, 0, 0], neck: [4, 0, 0], head: [0, 0, 0], 'upperArm*': [-120, 0, 18], 'foreArm*': [-30, 0, 0] }, legs: { L: foot('L', 0.156, 0.042, 30), R: foot('R', 0.156, 0.042, 30) } /* heel up, ball of the foot stays put */, hands: { L: 'flat', R: 'flat' } },
   ], { events: [{ t: 0.28, name: 'takeoff' }] });
   const air = (s) => ({ L: foot('L', 0.3 + 0.08 * s, 0.14 - 0.05 * s, -10), R: foot('R', 0.22 - 0.06 * s, -0.12 + 0.05 * s, 18) });
   const fall = keyPoseClip(sk, 'Fall', [
