@@ -461,7 +461,7 @@ export class Renderer {
     if (this._lastMat === m && this._lastProg === p) return; // sorted draws share material state
     this._lastMat = m; this._lastProg = p;
     const gl = this.gl;
-    p.i('uHasMap', m.map ? 1 : 0); p.i('uHasNormalMap', m.normalMap ? 1 : 0);
+    p.i('uHasMap', m.map ? 1 : 0); p.i('uEmissiveMap', m.emissiveMap ? 1 : 0); p.i('uHasNormalMap', m.normalMap ? 1 : 0);
     if (m.map) { gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, this._glTexture(m.map)); p.i('uMap', 6); }
     if (m.normalMap) { gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, this._glTexture(m.normalMap)); p.i('uNormalMap', 7); p.f('uNormalScale', m.normalScale ?? 1); }
     const c = matUniforms(m);

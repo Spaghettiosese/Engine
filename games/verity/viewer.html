@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Verity · Model &amp; Animation Viewer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../../examples/examples.css">
+<style>
+  .hud { max-height: calc(100% - 24px); overflow: auto; }
+  .list { display: flex; flex-wrap: wrap; gap: 4px; }
+  .list .btn { padding: 4px 10px; font-size: 13px; }
+  .list .btn[aria-pressed=true] { background: var(--brass); color: #2a1407; border-color: transparent; font-weight: 600; }
+  #bio { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+  #name { font-size: 20px; margin: 0 0 4px; }
+  .clips { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); max-width: min(900px, calc(100% - 32px)); display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+  .clips .btn { padding: 5px 11px; font-size: 14px; }
+  .clips .btn[aria-pressed=true] { background: var(--brass); color: #2a1407; border-color: transparent; font-weight: 600; }
+</style>
+</head>
+<body>
+<canvas class="stage" id="stage" aria-label="Verity model viewer"></canvas>
+<div class="hud">
+  <div class="card title"><span class="mark">SF</span><div><h1>Verity Cast</h1><small>Model &amp; animation viewer · built with the ShapeForge engine</small></div></div>
+  <div class="card"><h2 id="name"></h2><div id="bio"></div></div>
+  <div class="card"><div class="list" id="roster"></div></div>
+  <div class="card keys hide-sm">Drag to orbit · wheel to zoom · <kbd>←</kbd> <kbd>→</kbd> change character · <kbd>1</kbd>–<kbd>9</kbd> play a clip<br><kbd>Space</kbd> turntable · <kbd>[</kbd> <kbd>]</kbd> speed</div>
+  <div class="card" style="display:grid;gap:6px">
+    <div class="row"><label for="spd">Speed</label><input id="spd" type="range" min="0" max="2" step="0.05" value="1"><output id="spdOut">1×</output></div>
+    <div class="toggles"><label><input type="checkbox" id="tSpin" checked> Turntable</label><label><input type="checkbox" id="tBone"> Skeleton</label></div>
+  </div>
+</div>
+<div class="stats card" id="stats"></div>
+<div class="clips" id="clips"></div>
+<nav class="nav"><a href="../../index.html">Home</a><a href="index.html">Play Verity</a></nav>
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="viewer.js"></script>
+</body>
+</html>

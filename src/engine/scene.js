@@ -21,6 +21,7 @@ export class Material {
     this.sheen = o.sheen ?? 0; // cloth rim
     this.doubleSided = o.doubleSided ?? false;
     this.opacity = o.opacity ?? 1;
+    this.emissiveMap = o.emissiveMap ?? false; // glow with the colours of `map` (screens, signs, faces)
     this.map = o.map || null;             // V4: base-colour texture (sRGB)
     this.normalMap = o.normalMap || null; // V4: tangent-space normal texture
     this.normalScale = o.normalScale ?? 1;

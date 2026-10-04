@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>VERITY</title>
+<meta name="description" content="A first-person horror story about two brothers, a Minecraft mod and the thing that eats secrets. Built with the ShapeForge engine.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Pixelify+Sans:wght@400;600&family=Caveat:wght@500;700&display=swap">
+<link rel="stylesheet" href="verity.css">
+</head>
+<body>
+<canvas id="game" tabindex="-1"></canvas>
+<div id="ui">
+  <div id="osd" hidden><div id="osdTL">PLAY ▶</div><div id="osdBR"></div><div id="camLight" hidden><span></span>WEBCAM</div></div>
+  <div id="cross" hidden></div>
+  <div id="objective" hidden></div>
+  <div id="hint" hidden></div>
+  <div id="prompt" hidden></div>
+  <div id="lockHint" hidden>Click to look around</div>
+  <div id="bark" hidden></div>
+  <div id="meters"><div id="stamina" class="meter" hidden><i></i></div><div id="breath" class="meter breath" hidden><i></i></div></div>
+  <div id="veil" class="veil" hidden></div>
+  <div id="mc" hidden></div>
+  <div id="touch" hidden></div>
+  <div id="vhs"></div><div id="danger"></div>
+  <div id="fader"></div>
+  <div id="dialog" hidden><div id="dName" class="d-name"></div><div id="dText" class="d-text"></div><div id="dChoices" class="d-choices"></div><div id="dNext" class="d-next" hidden>▼</div></div>
+  <div id="phoneNote" hidden></div>
+  <div id="phone" class="phone" hidden></div>
+  <div id="note" class="note" hidden></div>
+  <div id="toast" hidden></div>
+  <div id="desktop" hidden></div>
+  <div id="panel" class="panel" hidden></div>
+  <div id="card" hidden></div>
+  <div id="menu" hidden></div>
+  <div id="gate">
+    <div class="gate-inner">
+      <div class="gate-tape">ZHONG FAMILY — DO NOT TAPE OVER</div>
+      <h1 class="logo">VERITY</h1>
+      <p class="gate-sub">She only tells the truth.</p>
+      <button id="gateBtn" class="gate-btn">INSERT TAPE ▶</button>
+      <p class="gate-warn">Contains jump scares, flashing images, and a family keeping a secret.<br>Headphones recommended. Best on a computer with a mouse.</p>
+    </div>
+  </div>
+</div>
+
+<div class="fatal" id="fatal" hidden></div>
+<script type="module" src="main.js"></script>
+</body>
+</html>

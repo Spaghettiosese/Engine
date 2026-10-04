@@ -137,7 +137,7 @@ uniform vec4 uLightSpot[MAX_LIGHTS];  // xyz direction, w cos(outer angle)
 uniform vec4 uLightExtra[MAX_LIGHTS]; // x profile, y cos(inner angle), z physical falloff
 uniform sampler2D uAO; uniform bool uUseAO; uniform vec2 uScreen; uniform float uAOStrength;
 uniform float uFogHeight;             // height falloff (0 = uniform fog)
-uniform sampler2D uMap; uniform bool uHasMap; uniform sampler2D uNormalMap; uniform bool uHasNormalMap; uniform float uNormalScale; // V4 textures
+uniform sampler2D uMap; uniform bool uHasMap; uniform bool uEmissiveMap; uniform sampler2D uNormalMap; uniform bool uHasNormalMap; uniform float uNormalScale; // V4 textures
 // V3: soft (PCSS) and contact shadows
 uniform sampler2D uShadowRaw; uniform float uShadowSoft;  // penumbra scale (0 = plain PCF)
 uniform sampler2DShadow uShadowMap2; uniform mat4 uShadowVP2; uniform bool uCascade; uniform float uShadowTexel2; // far cascade
@@ -533,7 +533,7 @@ void main(){
   color += kd*s.albedo*max(dot(N,Lf),0.0)*vec3(0.25,0.3,0.4)*0.35;
   float rim = pow(1.0-NoV, 4.0);
   color += (uSheen*s.albedo + vec3(0.06))*rim*uSunColor*0.35*(0.4+0.6*sh);
-  color += uEmissive;
+  color += (uEmissiveMap && uHasMap) ? uEmissive * texture(uMap, vUV).rgb : uEmissive;
   // fog
   float dist = length(uCamPos - vWorld);
   float fogAmt = dist*uFogDensity;
