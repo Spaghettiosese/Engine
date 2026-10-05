@@ -14,6 +14,7 @@ const files = ['editor.html', 'viewer.html', 'assets/cowboy.json', 'assets/grinn
 const walk = (d) => readdirSync(join(root, d)).forEach((f) => { const p = join(d, f); statSync(join(root, p)).isDirectory() ? walk(p) : files.push(p); });
 walk('src');
 walk('examples');
+walk('games');
 for (const f of files) { mkdirSync(dirname(join(out, f)), { recursive: true }); copyFileSync(join(root, f), join(out, f)); }
 // hosts that don't serve .glb get the sample model as base64 text; examples/import.html falls back to it
 writeFileSync(join(out, 'assets/cowboy.glb.txt'), readFileSync(join(root, 'assets/cowboy.glb')).toString('base64'));

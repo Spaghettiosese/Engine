@@ -402,6 +402,10 @@ export function nameTag(text, color = '#ffffff') {
   const mat = new E.Material({ name: 'Name tag', color: '#fff', map: new E.Texture(c, { repeat: false, mipmaps: false, nearest: true }), emissive: '#fff', emissiveMap: true, emissiveStrength: 1, roughness: 1, doubleSided: true });
   const node = new E.Node('Name tag'), m = new E.Mesh(E.plane({ width: 1.6, depth: 0.25 }), mat, 'tag');
   m.setEuler(90, 0, 0); m.castShadow = false; node.add(m);
-  node.userData.face = (cam) => { const p = node.world; const dx = cam.position[0] - p[12], dz = cam.position[2] - p[14]; node.setEuler(0, Math.atan2(dx, dz) * DEG - (node.parent ? 0 : 0), 0); };
+  node.userData.face = (cam) => { // billboard: turn to the camera whatever the parent's yaw is
+    const w = node.world, pw = node.parent ? node.parent.world : null;
+    const want = Math.atan2(cam.position[0] - w[12], cam.position[2] - w[14]), par = pw ? Math.atan2(pw[8], pw[10]) : 0;
+    node.setEuler(0, (want - par) * DEG, 0);
+  };
   return node;
 }

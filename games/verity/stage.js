@@ -30,6 +30,18 @@ export class Obj3 {
   }
 }
 
+// Make a box's side faces show an image the right way up (textures are top-down; the engine's
+// box UVs run bottom-up on the sides, so a picture would hang upside down)
+function uprightUVs(geo) {
+  const N = geo.normals, U = geo.uvs;
+  for (let i = 0; i < N.length / 3; i++) {
+    const nx = N[i * 3], nz = N[i * 3 + 2], u = U[i * 2], v = U[i * 2 + 1];
+    if (Math.abs(nz) > 0.5) { U[i * 2 + 1] = 1 - v; if (nz < 0) U[i * 2] = 1 - u; }
+    else if (Math.abs(nx) > 0.5) { U[i * 2] = nx > 0 ? 1 - v : v; U[i * 2 + 1] = 1 - u; }
+  }
+  return geo;
+}
+
 // rotate a local (x, z) offset by yaw (radians, about +Y)
 export const rotXZ = (x, z, ry) => [x * Math.cos(ry) + z * Math.sin(ry), -x * Math.sin(ry) + z * Math.cos(ry)];
 
@@ -38,7 +50,16 @@ export const rotXZ = (x, z, ry) => [x * Math.cos(ry) + z * Math.sin(ry), -x * Ma
 export class Frame {
   constructor(kit, x = 0, y = 0, z = 0, ry = 0) { this.kit = kit; this.o = [x, y, z]; this.ry = ry; }
   at(lx, ly, lz) { const [rx, rz] = rotXZ(lx, lz, this.ry); return [this.o[0] + rx, this.o[1] + ly, this.o[2] + rz]; }
-  box(mat, c, size, bevel = 0, rot = [0, 0, 0]) { this.kit.box(mat, this.at(c[0], c[1], c[2]), size, [rot[0], rot[1] + this.ry * DEG, rot[2]], bevel); return this; }
+  box(mat, c, size, bevel = 0, rot = [0, 0, 0]) {
+    const at = this.at(c[0], c[1], c[2]), r = [rot[0], rot[1] + this.ry * DEG, rot[2]];
+    if (mat.map) { // images on a box face: the engine's box UVs put a texture upside down, so remap them
+      const b = Math.min(bevel, ...size.map((s) => s * 0.45));
+      const geo = E.box({ width: size[0], height: size[1], depth: size[2], bevel: b, bevelSegments: b > 0 ? 1 : 3 });
+      uprightUVs(geo);
+      this.kit.add(mat, geo, at, r);
+    } else this.kit.box(mat, at, size, r, bevel);
+    return this;
+  }
   // box from its bottom-centre
   stand(mat, c, size, bevel = 0) { return this.box(mat, [c[0], c[1] + size[1] / 2, c[2]], size, bevel); }
   cyl(mat, c, r, h, segs = 14, r2 = r, rot = [0, 0, 0]) { this.kit.cyl(mat, this.at(c[0], c[1], c[2]), r, h, [rot[0], rot[1] + this.ry * DEG, rot[2]], segs, r2); return this; }

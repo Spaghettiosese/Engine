@@ -7,6 +7,7 @@ A zero-dependency WebGL2 engine for building 3D characters out of parametric sha
 | `index.html` | Landing page with a live render of the Cowboy cycling through his clips |
 | `editor.html` | **ShapeForge Studio**, a Blender-style editor (layout, hotkeys, modes, dope sheet) |
 | `viewer.html` | **Animation Viewer**: crossfades, root motion, WASD play mode, onion skins, exports |
+| `games/verity/` | **VERITY**, a full first-person horror game made with the engine (see `games/verity/README.md`) |
 | `examples/` | **Examples**: Frontier Town (playable, with rain), Ray Tracing, Physics Playground, Animation Lab, Lighting Lab, Architect, Hello Engine |
 
 Everything is plain ES modules. No build step, no npm dependencies.
