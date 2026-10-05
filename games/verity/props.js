@@ -286,16 +286,16 @@ export function chandelier(L, x, y, z) {
   const node = k.toNode('Chandelier'); node.position.set([x, y, z]); L.scene.add(node);
   return { node, bulbMat: bulb };
 }
-export function carProp(L, x, z, ry, color = '#4a4e56') {
-  const f = new Frame(L.kit, x, 0, z, ry), body = new Material({ name: 'Car paint', color, roughness: 0.3, metallic: 0.6 }), glass = new Material({ name: 'Car glass', color: '#1a2228', roughness: 0.05, metallic: 0.3 }), tire = plastic('#121214', { roughness: 0.9 });
+export function carProp(L, x, z, ry, color = '#4a4e56', kit = L.kit, collide = true) {
+  const f = new Frame(kit, x, 0, z, ry), body = new Material({ name: 'Car paint', color, roughness: 0.3, metallic: 0.6 }), glass = new Material({ name: 'Car glass', color: '#1a2228', roughness: 0.05, metallic: 0.3 }), tire = plastic('#121214', { roughness: 0.9 });
   f.box(body, [0, 0.55, 0], [1.8, 0.7, 4.3], 0.12); f.box(body, [0, 1.12, -0.2], [1.6, 0.55, 2.3], 0.18);
   f.box(glass, [0, 1.15, 0.92], [1.5, 0.45, 0.04], 0, [-24, 0, 0]); f.box(glass, [0, 1.15, -1.32], [1.5, 0.45, 0.04], 0, [24, 0, 0]);
   for (const s of [-1, 1]) f.box(glass, [s * 0.81, 1.15, -0.2], [0.04, 0.4, 2.0]);
   for (const [wx, wz] of [[-0.88, 1.35], [0.88, 1.35], [-0.88, -1.35], [0.88, -1.35]]) f.cyl(tire, [wx, 0.34, wz], 0.34, 0.22, 14, 0.34, [0, 0, 90]);
   for (const s of [-1, 1]) { f.box(emissive('#fff2c0', 2), [s * 0.6, 0.62, 2.16], [0.3, 0.12, 0.03]); f.box(emissive('#aa1111', 1.2), [s * 0.6, 0.62, -2.16], [0.3, 0.12, 0.03]); }
-  L.solid(x, z, Math.abs(Math.sin(ry)) > 0.7 ? 4.3 : 1.9, Math.abs(Math.sin(ry)) > 0.7 ? 1.9 : 4.3);
+  if (collide) L.solid(x, z, Math.abs(Math.sin(ry)) > 0.7 ? 4.3 : 1.9, Math.abs(Math.sin(ry)) > 0.7 ? 1.9 : 4.3);
 }
-export function tarp(L, x, z, ry) { const f = new Frame(L.kit, x, 0, z, ry); f.box(fabric('#3a4a5a', { doubleSided: true }), [0, 0.76, 0], [1.96, 1.52, 2.6], 0.2); }
+export function tarp(L, x, z, ry, kit = L.kit) { const f = new Frame(kit, x, 0, z, ry); f.box(fabric('#3a4a5a', { doubleSided: true }), [0, 0.76, 0], [1.96, 1.52, 2.6], 0.2); }
 export function workbench(L, x, z, ry) { const f = new Frame(L.kit, x, 0, z, ry); f.box(wood('#5a4a3a'), [0, 0.45, 0], [0.6, 0.9, 2.2], 0.01); L.solid(x, z, Math.abs(Math.sin(ry)) > 0.7 ? 2.2 : 0.6, Math.abs(Math.sin(ry)) > 0.7 ? 0.6 : 2.2); }
 export function houseFacade(L, x, z, ry, color, lit = false) {
   const f = new Frame(L.kit, x, 0, z, ry);
@@ -313,4 +313,25 @@ export function lampPost(L, x, z, on) {
   const f = new Frame(L.kit, x, 0, z, 0);
   f.cyl(metal('#2a2a2e'), [0, 2.1, 0], 0.05, 4.2, 8, 0.08); f.box(metal('#2a2a2e'), [0.3, 4.2, 0], [0.7, 0.05, 0.08]);
   f.cyl(emissive('#ffe0a0', on ? 5 : 0.2), [0.55, 4.12, 0], 0.12, 0.14, 8);
+}
+
+// The inside of a car seen from the driver's seat (origin = driver's seat, +Z is forward).
+// Returns a Node you can add to the scene, move and remove.
+export function carInterior(L, color = '#6a7078', hands = true) {
+  const k = new Kit(L.pal), dash = plastic('#1e1e22'), trim = plastic('#2a2a30'), seat = fabric('#3a3a42'), body = new Material({ name: 'Car body', color, roughness: 0.4, metallic: 0.5 });
+  const B = (m, x, y, z, w, h, d, rot = [0, 0, 0], bev = 0.01) => k.box(m, [x, y + h / 2, z], [w, h, d], rot, bev);
+  B(dash, 0.35, 0.55, 0.95, 1.7, 0.35, 0.6, [0, 0, 0], 0.04); B(dash, 0.35, 0.9, 1.1, 1.7, 0.1, 0.35);
+  B(emissive('#ff9a30', 1.2), 0, 0.93, 0.93, 0.34, 0.12, 0.01);
+  k.shape(trim, { type: 'torus', radius: 0.19, tube: 0.022, radialSegments: 6, tubularSegments: 20, arc: 360, tubeScaleY: 1 }, [], [0, 0.86, 0.62], [55, 0, 0]);
+  k.cyl(trim, [0, 0.8, 0.78], 0.03, 0.3, [70, 0, 0], 6);
+  if (hands) for (const sx of [-1, 1]) { k.shape(fabric('#d8a880'), { type: 'sphere', radius: 0.045, widthSegments: 8, heightSegments: 6 }, [], [sx * 0.17, 0.9, 0.6]); k.cyl(fabric('#4a4e56'), [sx * 0.24, 0.8, 0.36], 0.05, 0.5, [72, 0, -sx * 14], 8); }
+  B(seat, 0, 0.3, -0.05, 0.55, 0.12, 0.55, [0, 0, 0], 0.04); B(seat, 0.75, 0.3, -0.05, 0.55, 0.12, 0.55, [0, 0, 0], 0.04); B(seat, 0.75, 0.4, -0.35, 0.55, 0.75, 0.12, [0, 0, 0], 0.04);
+  B(seat, 0.35, 0.3, -1.1, 1.5, 0.45, 0.5, [0, 0, 0], 0.04); B(seat, 0.35, 0.72, -1.35, 1.5, 0.6, 0.12, [0, 0, 0], 0.04);
+  B(trim, 0.35, 0.2, -0.3, 1.8, 0.05, 2.6); B(plastic('#6a6a66'), 0.35, 1.48, -0.35, 1.8, 0.04, 2.3);
+  B(trim, -0.52, 0.3, -0.3, 0.06, 0.55, 2.4); B(trim, 1.22, 0.3, -0.3, 0.06, 0.55, 2.4);
+  B(body, -0.5, 0.88, 0.95, 0.06, 0.62, 0.06, [-31, 0, 0]); B(body, 1.2, 0.88, 0.95, 0.06, 0.62, 0.06, [-31, 0, 0]); B(body, -0.5, 0.88, -0.25, 0.06, 0.62, 0.06); B(body, 1.2, 0.88, -0.25, 0.06, 0.62, 0.06);
+  B(body, 0.35, 1.44, 1.2, 1.78, 0.06, 0.1);
+  B(trim, 0.35, 1.32, 0.95, 0.24, 0.07, 0.03); B(plastic('#c01818'), 0.35, 1.16, 0.93, 0.05, 0.05, 0.01, [0, 0, 45]); B(plastic('#c8a030'), 0.35, 1.2, 0.93, 0.008, 0.1, 0.008); B(plastic('#c01818'), 0.35, 1.06, 0.93, 0.02, 0.1, 0.01);
+  B(body, 0.35, 0.72, 2.0, 1.8, 0.1, 1.6);
+  return k.toNode('Car interior');
 }

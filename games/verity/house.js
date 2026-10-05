@@ -9,7 +9,7 @@
 //  z=-30└─────────────┴────────────────────┴────────────┴────────────────┘
 //      x=-20        -9        1    5   7  10                           20
 import * as E from '../../src/engine/index.js';
-import { Stage } from './stage.js';
+import { Stage, Obj3 } from './stage.js';
 import { Actor } from './actor.js';
 import { person } from './cast.js';
 import { houseMats, plastic, emissive } from './mats.js';
@@ -130,8 +130,11 @@ export class HouseLevel extends Stage {
     this.buildOutside(mode);
 
     // ------------------------------------------------------------ garage
-    P.carProp(this, -15.5, -4.5, 0);
-    P.tarp(this, -15.5, -5.6, 0);
+    { // the car and its tarp are separate nodes: LIGHTS OUT swaps the outside of the car for the inside
+      const ck = this.newKit(); P.carProp(this, 0, 0, 0, '#4a4e56', ck, false); this.carNode = ck.toNode('Dad car'); this.carNode.position.set([-15.5, 0, -4.5]); this.scene.add(this.carNode);
+      const tk = this.newKit(); P.tarp(this, 0, 0, 0, tk); this.tarpNode = tk.toNode('Tarp'); this.tarpNode.position.set([-15.5, 0, -5.6]); this.scene.add(this.tarpNode);
+      this.solid(-15.5, -4.5, 1.9, 4.3);
+    }
     P.breakerBox(this, -19.9, 1.05, -7, PI / 2);
     this.boxes = [];
     for (const [label, x, z, y] of [['DAD - BOOKS', -12.2, -8.2, 0], ['DAD - WINTER', -12.8, -8.1, 0], ['DAD - MISC', -12.5, -8.15, 0.36]]) { P.cardboardBox(this, x, y, z, 0, label); }
@@ -258,7 +261,7 @@ export class HouseLevel extends Stage {
     this.fridgeObj = this.hit.fridge; this.stoveObj = this.hit.stove; this.potObj = this.hit.pot; this.riceObj = this.hit.rice; this.kevinObj = this.hit.kevin; this.pantry = this.hit.pantry;
     this.momNote = this.hit.momNote; this.drawing = this.hit.drawing; this.drawer = this.hit.drawer; this.altarObj = this.hit.altar; this.guestBed = this.hit.guestBed; this.tub = this.hit.tub;
     this.toyChest = this.hit.toyChest; this.ericBed = this.hit.ericBed; this.jewelry = this.hit.jewelry; this.facedown = this.hit.facedown; this.tablet = this.hit.tablet; this.panda = this.hit.panda;
-    this.drawing2 = this.hit.drawing2; this.sticker3 = this.hit.sticker3; this.sticker7 = this.hit.sticker7; this.dadCar = this.hit.car; this.tarp = this.hit.tarp; this.garageCab = this.hit.garageCab;
+    this.drawing2 = this.hit.drawing2; this.sticker3 = this.hit.sticker3; this.sticker7 = this.hit.sticker7; this.dadCar = new Obj3(this.carNode); this.tarp = new Obj3(this.tarpNode); this.tarpBox = this.hit.tarp; this.garageCab = this.hit.garageCab;
     this.coatCloset = this.hit.coatCloset; this.shoeRackObj = this.hit.shoeRack; this.couchObj = this.hit.couch; this.boxes0 = this.hit.boxes; this.tarpBox = this.hit.tarp;
     this.breaker = this.hit.breaker; this.harryDesk = this.hit.harryDesk; this.sticker7Node = null;
 
@@ -502,7 +505,7 @@ export class HouseLevel extends Stage {
     const mesh = new E.Mesh(E.plane({ width: size, depth: size }), m, 'Smiley');
     mesh.setEuler(90, ry * 180 / PI, 0); mesh.position.set([x, y, z]); mesh.castShadow = false;
     this.scene.add(mesh);
-    return { visible: true, node: mesh };
+    return { visible: true, node: mesh, mat: m };
   }
   thunder() { this.lightning = 0.35; this.game.audio.thunder(); if (this.onLightning) this.onLightning(); }
 

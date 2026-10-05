@@ -34,9 +34,9 @@ export class Material {
 // An image for materials (Material.map = base colour, Material.normalMap = tangent-space
 // normals). image: ImageBitmap / HTMLImageElement / canvas, or { width, height, data } RGBA8.
 export class Texture {
-  constructor(image, { srgb = true, repeat = true, mipmaps = true, name = 'Texture' } = {}) {
+  constructor(image, { srgb = true, repeat = true, mipmaps = true, nearest = false, name = 'Texture' } = {}) {
     if (!image) throw new Error('Texture needs an image');
-    this.image = image; this.srgb = srgb; this.repeat = repeat; this.mipmaps = mipmaps; this.name = name; this.version = 1;
+    this.image = image; this.srgb = srgb; this.repeat = repeat; this.mipmaps = mipmaps; this.nearest = nearest; this.name = name; this.version = 1;
   }
   get width() { return this.image.width; }
   get height() { return this.image.height; }

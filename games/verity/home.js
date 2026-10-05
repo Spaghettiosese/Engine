@@ -299,7 +299,7 @@ function setupHomeOptional(g, L) {
   L.optional(L.jewelry, 'jewelry', 'Jewelry box', async () => {
     await think('Mom\'s jewelry box. Nai Nai\'s jade bracelet is in there. Nobody\'s allowed to touch it.');
   });
-  L.optional(L.tarp, 'dadcar', "Dad's car", async () => {
+  L.optional(L.tarpBox, 'dadcar', "Dad's car", async () => {
     await think('Dad\'s old car. He took the new one. He said he\'d come back for this one "when things settle down."');
     await think('Things have been settling down since July.');
   });
