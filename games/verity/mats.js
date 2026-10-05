@@ -27,7 +27,7 @@ export function houseMats() {
     runner: fabric('#6a2a2a', { patternScale: 90 }),
     paper: mk('paper', { color: '#8a8c94', roughness: 0.85, pattern: 'stripes', patternScale: 14, patternColor: '#777a86', patternStrength: 0.35 }),
     cream: paint('#d3cab2'), tileWall: paint('#c8d4d8', { roughness: 0.4 }), blue: paint('#8aa6c8'), green: paint('#8a9a84'), cinder: mk('cinder', { color: '#a9a598', roughness: 0.95, pattern: 'brick', patternScale: 6, patternColor: '#7e7a6c', patternStrength: 0.4 }),
-    ceiling: paint('#d8d4c8'), ceilingWood: mk('ceilingWood', { color: '#5a4030', roughness: 0.7, pattern: 'planks', patternScale: 7, patternColor: '#241810' }),
+    ceiling: paint('#d8d4c8'), ceilingWood: mk('ceilingWood', { color: '#8a6a4c', roughness: 0.7, pattern: 'planks', patternScale: 7, patternColor: '#4a3322' }),
     door: mk('door', { color: '#6a4a30', roughness: 0.6, pattern: 'planks', patternScale: 4, patternColor: '#2a190c', patternStrength: 0.5 }),
     frontDoor: mk('frontDoor', { color: '#6a3a2a', roughness: 0.5, pattern: 'wood', patternScale: 14, patternColor: '#2a150c' }),
     trim: mk('trimW', { color: '#e8e0cc', roughness: 0.7 }),

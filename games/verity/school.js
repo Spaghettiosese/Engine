@@ -34,7 +34,7 @@ export class SchoolLevel extends Stage {
     const lino = new E.Material({ name: 'Linoleum', color: '#bdb8a4', roughness: 0.3, pattern: 'checker', patternScale: 12, patternColor: '#8f8b78', patternStrength: 0.9 });
     const ceil = paint('#cfcfc6', { pattern: 'checker', patternScale: 2.4, patternColor: '#b4b4aa', patternStrength: 0.4 });
     const brick = new E.Material({ name: 'Brick', color: '#8a4a3a', roughness: 0.9, pattern: 'brick', patternScale: 6, patternColor: '#4a2a22', patternStrength: 0.7 });
-    const locker = new E.Material({ name: 'Locker', color: '#3d5f86', roughness: 0.45, metallic: 0.5, pattern: 'stripes', patternScale: 7, patternColor: '#243a56', patternStrength: 0.8 });
+    const locker = new E.Material({ name: 'Locker', color: '#4a74a8', roughness: 0.5, metallic: 0.12, pattern: 'stripes', patternScale: 7, patternColor: '#243a56', patternStrength: 0.8 });
     // floors & ceilings
     this.floor(-5, -8, 5, 0, lino); this.floor(-18, 0, 24, 4, lino);
     this.ceiling(-5, -8, 5, 0, ceil); this.ceiling(-18, 0, 24, 4, ceil);

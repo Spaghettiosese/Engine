@@ -48,6 +48,7 @@ export class TapeLevel extends Stage {
     this.chand = P.chandelier(this, 0, this.H, -0.6);
     this.lamp = this.addLamp(0, this.H - 0.6, -0.6, { color: '#ffd9a0', intensity: 5, range: 12, bulb: false });
     this.lampBaseK = 0.85; this._lampBase = 11;
+    this.fill = this.addLamp(0.4, 2.4, 2.3, { color: '#ffe0b8', intensity: 2.6, range: 6, bulb: false });
     this.laptopGlow = this.addLamp(2.6, 0.9, 0.9, { color: '#ffe070', intensity: 1.2, range: 3.2, bulb: false });
     // back yard
     k.span(M.grass, [-50, -0.3, -50], [50, -0.02, -4.0]);
@@ -80,7 +81,7 @@ export class TapeLevel extends Stage {
     E.applyTimeOfDay(env, 23.6, { rays: false });
     env.shadowRadius = 14; env.shadowCenter = [0, 1, -4]; env.shadowFar = 40;
     env.fogDensity = 0.02; env.clouds = true;
-    env.ambient = 0.32; env.skyColor = [0.3, 0.33, 0.45]; env.groundColor = [0.22, 0.2, 0.2];
+    env.ambient = 0.42; env.skyColor = [0.3, 0.33, 0.45]; env.groundColor = [0.22, 0.2, 0.2];
     env.sunIntensity = 0.3;
     env.volumetric = 0.4; env.volumeDensity = 0.03;
     this.setPower(true);

@@ -577,6 +577,10 @@ export async function chapterBlock(g) {
   g.input.setTouchMode('voxel');
   g.audio.setMusic('mcDay');
   g.input.requestLock();
+  if (g.devSkip === 'chase') { // dev/test: ?ch=4&skip=chase jumps to the chase
+    L.verity.visible = true; L.setSky(1.4); L.corrupt = 1; L.faceKind = 'grin'; L.ericFrozen = true; L.eric.group.visible = false; g.flags.verityWeird = true;
+    await chaseSequence(g, L); return;
+  }
   mc.sys('hzhong_09 joined the game');
   await g.wait(1.2);
   mc.sys('EricTheGreat_ joined the game');
@@ -847,9 +851,9 @@ async function chaseSequence(g, L) {
     // caught
     L.chase = null; L.mon.visible = true;
     await jumpscare(g, L.mon, { dur: 0.9 });
+    g.retro.u.uFade.value = 0; document.getElementById('fader').style.opacity = 0; // the death screen sits under the fader
     await mc.death('hzhong_09 was slain by Verity');
     // respawn
-    g.retro.u.uFade.value = 0; document.getElementById('fader').style.opacity = 0;
     m.scale.setScalar(1.3);
     L.vp.place(sx, sy, sz, faceYaw);
     m.position.set(mx, L.world.topY(Math.floor(mx), Math.floor(mz)) + 1, mz);
